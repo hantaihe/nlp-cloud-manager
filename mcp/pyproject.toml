@@ -1,0 +1,12 @@
+[project]
+name = "sample-mcp-server"
+version = "0.1.0"
+description = "Sample MCP server for SWS"
+dependencies = [
+    "mcp>=0.1.0",
+    "fastmcp>=0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

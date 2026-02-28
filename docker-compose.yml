@@ -1,0 +1,38 @@
+services:
+  main-fe:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - main-be
+
+  main-be:
+    build:
+      context: ./backend/base
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+
+  sample-fe:
+    build:
+      context: ./frontend/services/sample
+      dockerfile: Dockerfile
+    ports:
+      - "5174:5174"
+    environment:
+      - NODE_ENV=production
+
+  sample-be:
+    build:
+      context: ./backend/sample
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
