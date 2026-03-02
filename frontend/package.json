@@ -6,7 +6,8 @@
 	"scripts": {
 		"dev:main": "vite dev",
 		"dev:sample": "pnpm --filter sample dev",
-		"dev": "concurrently -n \"MAIN-FE,SAMP-FE\" -c \"blue,magenta\" \"npm:dev:main\" \"npm:dev:sample\"",
+		"dev:aws": "pnpm --filter @nlp-cloud-manager/aws dev",
+		"dev": "concurrently -n \"MAIN-FE,SAMP-FE,AWS-FE\" -c \"blue,magenta,yellow\" \"npm:dev:main\" \"npm:dev:sample\" \"npm:dev:aws\"",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

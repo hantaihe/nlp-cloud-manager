@@ -11,7 +11,8 @@
 
 	const services = [
 		{ icon: '❖', label: 'Dashboard', href: '/' },
-		{ icon: '⚡', label: 'Sample Service', href: '/sample' }
+		{ icon: '⚡', label: 'Sample Service', href: '/sample' },
+		{ icon: '☁️', label: 'AWS Service', href: '/aws-cost' }
 	];
 </script>
 

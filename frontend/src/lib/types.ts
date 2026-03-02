@@ -1,9 +1,9 @@
 
 export interface DashboardItem {
     id: string;
-    type: 'sample';
+    type: 'sample' | 'aws';
     label: string;
     visible: boolean;
-    cols: number; // grid-column-end span
-    rows: number; // grid-row-end span
+    cols: number;
+    rows: number;
 }

@@ -16,6 +16,13 @@ pnpm install
 pnpm run dev
 ```
 
+### AWS
+```bash
+cd frontend/services/aws
+pnpm install
+pnpm run dev
+```
+
 ## 2. Backend 
 
 ### Base
@@ -28,6 +35,13 @@ pnpm run start:dev
 ### Sample
 ```bash
 cd backend/sample
+pnpm install
+pnpm run start:dev
+```
+
+### AWS
+```bash
+cd backend/aws
 pnpm install
 pnpm run start:dev
 ```

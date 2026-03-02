@@ -10,3 +10,4 @@ const app = mount(App, {
 })
 
 export default app
+

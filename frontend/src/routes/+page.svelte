@@ -11,7 +11,8 @@
 	let isEditing = $state(false);
 
 	const DEFAULT_LAYOUT: DashboardItem[] = [
-		{ id: 'sample', type: 'sample', label: 'Sample Service', visible: true, cols: 1, rows: 1 }
+		{ id: 'sample', type: 'sample', label: 'Sample Service', visible: true, cols: 1, rows: 1 },
+		{ id: 'aws', type: 'aws', label: 'AWS Billing', visible: true, cols: 2, rows: 1 }
 	];
 
 	let layout = $state<DashboardItem[]>([]);
@@ -238,6 +239,12 @@
 						>
 							{#snippet action()}
 								<a class="shortcut-link" href="/sample">Go</a>
+							{/snippet}
+						</Card>
+					{:else if item.type === 'aws'}
+						<Card title={item.label} value="AWS" subtitle="Cost & Usage" icon="☁️" color="warning">
+							{#snippet action()}
+								<a class="shortcut-link" href="/aws-cost">Go</a>
 							{/snippet}
 						</Card>
 					{/if}
