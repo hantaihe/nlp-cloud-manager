@@ -12,7 +12,8 @@
 
 	const DEFAULT_LAYOUT: DashboardItem[] = [
 		{ id: 'sample', type: 'sample', label: 'Sample Service', visible: true, cols: 1, rows: 1 },
-		{ id: 'aws', type: 'aws', label: 'AWS Billing', visible: true, cols: 2, rows: 1 }
+		{ id: 'aws', type: 'aws', label: 'AWS Billing', visible: true, cols: 2, rows: 1 },
+		{ id: 'azure', type: 'azure', label: 'Azure Billing', visible: true, cols: 2, rows: 1 }
 	];
 
 	let layout = $state<DashboardItem[]>([]);
@@ -245,6 +246,12 @@
 						<Card title={item.label} value="AWS" subtitle="Cost & Usage" icon="☁️" color="warning">
 							{#snippet action()}
 								<a class="shortcut-link" href="/aws-cost">Go</a>
+							{/snippet}
+						</Card>
+					{:else if item.type === 'azure'}
+						<Card title={item.label} value="Azure" subtitle="Cost & Usage" icon="🟦" color="info">
+							{#snippet action()}
+								<a class="shortcut-link" href="/azure-cost">Go</a>
 							{/snippet}
 						</Card>
 					{/if}
