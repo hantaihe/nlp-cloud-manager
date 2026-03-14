@@ -1,0 +1,13 @@
+- google-cloud-billing
+- google-cloud-billing-budgets
+- google-cloud-bigquery
+- google-cloud-bigquery-reservation
+- google-cloud-bigquery-datatransfer
+- google-cloud-recommender
+- google-cloud-monitoring
+- google-cloud-logging
+- google-cloud-asset
+- google-cloud-quotas
+- google-cloud-org-policy
+- google-cloud-service-usage
+- google-cloud-config

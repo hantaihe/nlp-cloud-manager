@@ -1,10 +1,14 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { DashboardLayout } from './dashboard-layout.entity';
 
 @Controller('api')
 export class AppController {
-  private layout = JSON.stringify([
-    { id: 'sample', type: 'sample', label: 'Sample Service', visible: true, cols: 1, rows: 1 }
-  ]);
+  constructor(
+    @InjectRepository(DashboardLayout)
+    private readonly dashboardLayoutRepository: Repository<DashboardLayout>,
+  ) { }
 
   @Get('sample')
   getSampleData() {
@@ -16,17 +20,38 @@ export class AppController {
   }
 
   @Get('dashboard/layout')
-  getLayout(@Query('userId') userId: string) {
+  async getLayout(@Query('userId') userId: string) {
+    const layout = await this.dashboardLayoutRepository.findOne({
+      where: { userId: userId || 'default' },
+    });
     return {
       data: {
-        layoutData: this.layout
-      }
+        layoutData: layout ? layout.layoutData : null,
+      },
     };
   }
 
   @Post('dashboard/layout')
-  saveLayout(@Body() body: { layoutData: string }) {
-    this.layout = body.layoutData;
+  async saveLayout(
+    @Body() body: { layoutData: string },
+    @Query('userId') userId: string,
+  ) {
+    const uId = userId || 'default';
+    let layout = await this.dashboardLayoutRepository.findOne({
+      where: { userId: uId },
+    });
+
+    if (layout) {
+      layout.layoutData = body.layoutData;
+    } else {
+      layout = this.dashboardLayoutRepository.create({
+        userId: uId,
+        layoutData: body.layoutData,
+      });
+    }
+
+    await this.dashboardLayoutRepository.save(layout);
     return { success: true };
   }
 }
+

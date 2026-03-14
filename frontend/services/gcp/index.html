@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GCP Cost Management</title>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const theme = urlParams.get('theme') || localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+
+        const bgColors = {
+            dark: '#09090b',
+            light: '#f8fafc',
+            ocean: '#0f172a',
+            forest: '#064e3b'
+        };
+        document.documentElement.style.backgroundColor = bgColors[theme] || bgColors.dark;
+    </script>
+</head>
+
+<body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+
+</html>

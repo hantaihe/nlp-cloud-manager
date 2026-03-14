@@ -23,6 +23,20 @@ pnpm install
 pnpm run dev
 ```
 
+### Azure
+```bash
+cd frontend/services/azure
+pnpm install
+pnpm run dev
+```
+
+### GCP
+```bash
+cd frontend/services/gcp
+pnpm install
+pnpm run dev
+```
+
 ## 2. Backend 
 
 ### Base
@@ -44,6 +58,18 @@ pnpm run start:dev
 cd backend/aws
 pnpm install
 pnpm run start:dev
+```
+
+### Azure
+```bash
+cd backend/azure
+uv run main.py
+```
+
+### GCP
+```bash
+cd backend/gcp
+uv run main.py
 ```
 
 ## 3. MCP Server

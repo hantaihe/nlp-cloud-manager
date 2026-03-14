@@ -13,7 +13,8 @@
 		{ icon: '❖', label: 'Dashboard', href: '/' },
 		{ icon: '⚡', label: 'Sample Service', href: '/sample' },
 		{ icon: '☁️', label: 'AWS Service', href: '/aws-cost' },
-		{ icon: '🟦', label: 'Azure Service', href: '/azure-cost' }
+		{ icon: '🟦', label: 'Azure Service', href: '/azure-cost' },
+		{ icon: '🩵', label: 'GCP Service', href: '/gcp-cost' }
 	];
 </script>
 

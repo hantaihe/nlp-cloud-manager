@@ -1,0 +1,30 @@
+[project]
+name = "gcp"
+version = "0.1.0"
+description = "GCP Cost Management API"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "google-cloud-billing",
+    "google-cloud-billing-budgets",
+    "google-cloud-bigquery",
+    "google-cloud-bigquery-reservation",
+    "google-cloud-bigquery-datatransfer",
+    "google-cloud-recommender",
+    "google-cloud-monitoring",
+    "google-cloud-logging",
+    "google-cloud-asset",
+    "google-cloud-quotas",
+    "google-cloud-org-policy",
+    "google-cloud-service-usage",
+    "google-cloud-config",
+    "sqlalchemy",
+    "aiomysql",
+    "cryptography",
+    "python-dotenv",
+    "pydantic-settings",
+    "six",
+    "greenlet",
+]
