@@ -96,7 +96,7 @@
 
 <div class="credentials-manager">
 	<button class="toggle-btn" onclick={() => (isVisible = !isVisible)}>
-		{activeName ? `⚙️ AWS: ${activeName}` : '⚠️ AWS Setup Required'}
+		{activeName ? `AWS: ${activeName}` : 'AWS 설정 필요'}
 	</button>
 
 	{#if isVisible}
@@ -175,7 +175,7 @@
 					</div>
 				</div>
 
-				<button class="save-btn" onclick={saveCredential}>Save Credential</button>
+				<button class="save-btn" onclick={saveCredential}>저장</button>
 			</div>
 		</div>
 	{/if}

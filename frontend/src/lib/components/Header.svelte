@@ -22,11 +22,32 @@
 
 	const services = [
 		{
-			name: 'Sample Service',
-			type: 'sample',
-			href: '/sample',
-			icon: '⚡',
-			desc: '샘플 서비스'
+			name: 'Dashboard',
+			type: 'dashboard',
+			href: '/',
+			symbol: '❖',
+			desc: '메인 대시보드'
+		},
+		{
+			name: 'AWS Service',
+			type: 'aws',
+			href: '/aws-cost',
+			imgSrc: '/icons/aws.svg',
+			desc: 'Amazon Web Services 비용 관리'
+		},
+		{
+			name: 'Azure Service',
+			type: 'azure',
+			href: '/azure-cost',
+			imgSrc: '/icons/azure.svg',
+			desc: 'Microsoft Azure 비용 관리'
+		},
+		{
+			name: 'GCP Service',
+			type: 'gcp',
+			href: '/gcp-cost',
+			imgSrc: '/icons/gcp.svg',
+			desc: 'Google Cloud Platform 비용 관리'
 		}
 	];
 
@@ -72,7 +93,13 @@
 				<div class="search-results-dropdown">
 					{#each matchingServices as service}
 						<button class="result-item" onclick={() => navigateTo(service.href)}>
-							<span class="result-icon">{service.icon}</span>
+							<span class="result-icon">
+								{#if service.imgSrc}
+									<img src={service.imgSrc} alt="" class="search-result-logo" />
+								{:else}
+									{service.symbol}
+								{/if}
+							</span>
 							<div class="result-info">
 								<span class="result-name">{service.name}</span>
 								<span class="result-desc">{service.desc}</span>
@@ -95,7 +122,7 @@
 
 		<div class="notification-wrapper">
 			<button class="icon-btn" onclick={() => (showNotifications = !showNotifications)}>
-				<span class="notification-icon">🔔</span>
+				<span class="notification-icon">◈</span>
 				<span class="notification-badge">3</span>
 			</button>
 
@@ -109,7 +136,7 @@
 						{#each notifications as notif (notif.id)}
 							<li class="notification-item {notif.type}">
 								<span class="notif-icon">
-									{#if notif.type === 'warning'}⚠️{:else if notif.type === 'success'}✅{:else}ℹ️{/if}
+									{#if notif.type === 'warning'}!{:else if notif.type === 'success'}✓{:else}i{/if}
 								</span>
 								<div class="notif-content">
 									<p class="notif-message">{notif.message}</p>
@@ -475,7 +502,19 @@
 	}
 
 	.result-icon {
-		font-size: 1.5rem;
+		font-size: 1.25rem;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-text-secondary);
+	}
+
+	.search-result-logo {
+		width: 22px;
+		height: 22px;
+		object-fit: contain;
 	}
 
 	.result-info {

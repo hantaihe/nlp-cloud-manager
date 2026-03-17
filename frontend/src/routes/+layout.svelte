@@ -6,8 +6,12 @@
 	import { page } from '$app/stores';
 	import { themeStore } from '$lib/theme.svelte';
 
+	import { SERVICES } from '$lib/services';
 	let { children } = $props();
 	let isTerminal = $derived($page.url.pathname.includes('/terminal'));
+	let serviceId = $derived($page.params.id);
+	let currentService = $derived(SERVICES.find((s) => s.id === serviceId));
+	let pageTitle = $derived(currentService ? `${currentService.name} Service` : 'Dashboard');
 
 	$effect(() => {
 		const handleMessage = (event: MessageEvent) => {
@@ -39,7 +43,7 @@
 {#if isTerminal}
 	{@render children()}
 {:else}
-	<Layout title="Dashboard" titleHref="/">
+	<Layout title={pageTitle} titleHref="/">
 		{@render children()}
 	</Layout>
 	<Chatbot />

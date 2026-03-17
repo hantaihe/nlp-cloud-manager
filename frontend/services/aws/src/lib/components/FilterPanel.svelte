@@ -7,7 +7,7 @@
 			end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1)
 				.toISOString()
 				.split('T')[0],
-			granularity: 'MONTHLY' as 'DAILY' | 'MONTHLY' | 'HOURLY',
+			granularity: 'DAILY' as 'DAILY' | 'MONTHLY' | 'HOURLY',
 			groupBy: [] as string[]
 		}),
 		onApply
@@ -25,11 +25,19 @@
 
 	const granularities = ['DAILY', 'MONTHLY', 'HOURLY'];
 
+	let errorMessage = $state('');
+
 	function toggleGroupBy(dimId: string) {
 		if (filters.groupBy.includes(dimId)) {
 			filters.groupBy = filters.groupBy.filter((id: string) => id !== dimId);
+			errorMessage = '';
 		} else {
+			if (filters.groupBy.length >= 2) {
+				errorMessage = '그룹화는 최대 2개까지 선택 가능합니다.';
+				return;
+			}
 			filters.groupBy = [...filters.groupBy, dimId];
+			errorMessage = '';
 		}
 	}
 
@@ -63,7 +71,12 @@
 	</div>
 
 	<div class="filter-section">
-		<label>Group By</label>
+		<div class="section-header">
+			<label>Group By</label>
+			{#if errorMessage}
+				<span class="error-msg">{errorMessage}</span>
+			{/if}
+		</div>
 		<div class="tags">
 			{#each dimensions as dim}
 				<button
@@ -110,6 +123,18 @@
 		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+	}
+
+	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.error-msg {
+		font-size: 0.75rem;
+		color: #ff4d4d;
+		font-weight: 500;
 	}
 
 	.date-inputs {

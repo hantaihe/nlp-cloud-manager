@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import logo from '$lib/assets/logo.png';
+	import { SERVICES } from '$lib/services';
 
 	interface Props {
 		isCollapsed?: boolean;
@@ -9,13 +10,15 @@
 
 	let { isCollapsed = false, onToggle }: Props = $props();
 
-	const services = [
-		{ icon: '❖', label: 'Dashboard', href: '/' },
-		{ icon: '⚡', label: 'Sample Service', href: '/sample' },
-		{ icon: '☁️', label: 'AWS Service', href: '/aws-cost' },
-		{ icon: '🟦', label: 'Azure Service', href: '/azure-cost' },
-		{ icon: '🩵', label: 'GCP Service', href: '/gcp-cost' }
-	];
+	const servicesMenu = $derived([
+		{ icon: 'Dashboard', href: '/', symbol: '❖' },
+		...SERVICES.map((s) => ({
+			icon: s.name,
+			href: `/service/${s.id}`,
+			imgSrc: s.icon,
+			symbol: s.icon ? undefined : '◈'
+		}))
+	]);
 </script>
 
 <aside class="sidebar" class:collapsed={isCollapsed}>
@@ -37,7 +40,7 @@
 			{/if}
 
 			<ul class="menu-items">
-				{#each services as item (item.label)}
+				{#each servicesMenu as item (item.icon)}
 					<li>
 						<a
 							href={item.href}
@@ -46,9 +49,15 @@
 								? $page.url.pathname === '/'
 								: $page.url.pathname.startsWith(item.href)}
 						>
-							<span class="menu-icon">{item.icon}</span>
+							<span class="menu-icon">
+								{#if item.imgSrc}
+									<img src={item.imgSrc} alt="" class="sidebar-logo" />
+								{:else if item.symbol}
+									{item.symbol}
+								{/if}
+							</span>
 							{#if !isCollapsed}
-								<span class="menu-label">{item.label}</span>
+								<span class="menu-label">{item.icon} Service</span>
 							{/if}
 						</a>
 					</li>
@@ -97,8 +106,8 @@
 	}
 
 	.logo-img {
-		width: 48px;
-		height: 48px;
+		width: 64px;
+		height: 64px;
 		object-fit: contain;
 		flex-shrink: 0;
 	}
@@ -176,10 +185,19 @@
 	}
 
 	.menu-icon {
-		font-size: 1rem;
-		width: 20px;
-		text-align: center;
+		font-size: 1.1rem;
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		opacity: 0.7;
+	}
+
+	.sidebar-logo {
+		width: 18px;
+		height: 18px;
+		object-fit: contain;
 	}
 
 	.menu-item:hover .menu-icon,

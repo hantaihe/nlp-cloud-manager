@@ -7,33 +7,21 @@
 
 	let { assets = [] }: { assets: Asset[] } = $props();
 
-	function getAssetIcon(type: string) {
-		if (type?.includes('compute')) return '🖥️';
-		if (type?.includes('storage')) return '💾';
-		if (type?.includes('sql') || type?.includes('database')) return '🗄️';
-		if (type?.includes('network') || type?.includes('firewall')) return '🌐';
-		if (type?.includes('iam') || type?.includes('serviceAccount')) return '🔐';
-		if (type?.includes('pubsub')) return '📨';
-		if (type?.includes('function')) return '⚡';
-		if (type?.includes('cluster') || type?.includes('container')) return '🐳';
-		return '📦';
-	}
-
-	function getShortType(type: string) {
+	function getShortType(type?: string) {
 		const parts = type?.split('/') || [];
-		return parts[parts.length - 1] || type;
+		return parts[parts.length - 1] || type || '';
 	}
 
-	function getShortName(name: string) {
+	function getShortName(name?: string) {
 		const parts = name?.split('/') || [];
-		return parts[parts.length - 1] || name;
+		return parts[parts.length - 1] || name || '';
 	}
 </script>
 
 <div class="assets-container glass">
-	<h3>🗂️ Asset Inventory</h3>
+	<h3>Asset Inventory</h3>
 	<div class="asset-count">
-		<span class="count">{assets.length}</span> resources found
+		<span class="count">{assets.length}</span> 개 리소스
 	</div>
 
 	<div class="assets-grid">
@@ -42,7 +30,6 @@
 		{:else}
 			{#each assets as asset}
 				<div class="asset-card">
-					<div class="asset-icon">{getAssetIcon(asset.asset_type)}</div>
 					<div class="asset-info">
 						<span class="asset-name">{getShortName(asset.name)}</span>
 						<span class="asset-type">{getShortType(asset.asset_type)}</span>

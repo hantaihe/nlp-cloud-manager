@@ -1,6 +1,6 @@
 import { Entity, Column, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
-@Entity('credentials')
+@Entity('aws_credentials')
 export class Credential {
     @PrimaryGeneratedColumn()
     id: number;

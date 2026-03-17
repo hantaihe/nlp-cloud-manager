@@ -10,7 +10,7 @@
 </script>
 
 <div class="accounts-container glass">
-	<h3>📋 Billing Accounts</h3>
+	<h3>청구 계정</h3>
 	<div class="accounts-grid">
 		{#if accounts.length === 0}
 			<p class="empty">청구 계정이 없습니다.</p>

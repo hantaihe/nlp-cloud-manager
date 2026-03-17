@@ -95,7 +95,7 @@
 
 <div class="credentials-manager">
 	<button class="toggle-btn" onclick={() => (isVisible = !isVisible)}>
-		{activeName ? `⚙️ GCP: ${activeName}` : '⚠️ GCP Setup Required'}
+		{activeName ? `GCP: ${activeName}` : 'GCP Setup Required'}
 	</button>
 
 	{#if isVisible}

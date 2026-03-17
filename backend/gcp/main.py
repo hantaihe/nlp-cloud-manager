@@ -1,4 +1,11 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+import json
+import time
+from datetime import datetime
+from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from google.oauth2 import service_account
@@ -7,28 +14,93 @@ from google.cloud.billing import budgets_v1
 from google.cloud import bigquery
 from google.cloud.bigquery_reservation_v1 import ReservationServiceClient
 from google.cloud import bigquery_datatransfer_v1
-from google.cloud import recommender_v1
+
 from google.cloud import monitoring_v3
-from google.cloud import logging_v2
+from google.cloud import logging_v2 as gcp_logging_v2
 from google.cloud import asset_v1
 from google.cloud import cloudquotas_v1
 from google.cloud import orgpolicy_v2
 from google.cloud import service_usage_v1
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
-from datetime import datetime
-import json
-
 from database import engine, Base, get_db
 from models import GCPCredential
 
-app = FastAPI(title="GCP Cost & Billing API")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("HTTP")
 
+def log_gcp_call(service_name, method_name, func, *args, **kwargs):
+    now = time.time()
+    logger.info(f"SDK Request: GCP {service_name}.{method_name}")
+    try:
+        result = func(*args, **kwargs)
+        duration = (time.time() - now) * 1000
+        logger.info(f"SDK Response: GCP {service_name}.{method_name} - Success ({duration:.2f}ms)")
+        return result
+    except Exception as e:
+        duration = (time.time() - now) * 1000
+        logger.error(f"SDK Response: GCP {service_name}.{method_name} - Error ({duration:.2f}ms): {str(e)}")
+        raise e
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    yield
+
+app = FastAPI(title="GCP Cost & Billing API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    
+    body = await request.body()
+    try:
+        body_json = json.loads(body) if body else {}
+    except:
+        body_json = body.decode() if body else {}
+
+    logger.info(
+        f"Request {request.method} {request.url.path}\n"
+        f" Query: {dict(request.query_params)}\n"
+        f" Body: {json.dumps(body_json)}"
+    )
+
+    async def receive():
+        return {"type": "http.request", "body": body}
+    request._receive = receive
+
+    response = await call_next(request)
+    
+    process_time = (time.time() - start_time) * 1000
+    
+    response_body = b""
+    async for chunk in response.body_iterator:
+        response_body += chunk
+    
+    try:
+        resp_json = json.loads(response_body) if response_body else {}
+    except:
+        resp_json = response_body.decode() if response_body else {}
+
+    logger.info(
+        f"Response {request.method} {request.url.path} - {response.status_code} ({process_time:.2f}ms)\n"
+        f" Message: {json.dumps(resp_json)}"
+    )
+
+    return JSONResponse(
+        content=resp_json,
+        status_code=response.status_code,
+        headers=dict(response.headers)
+    )
 
 class CredentialCreate(BaseModel):
     name: str
@@ -41,8 +113,9 @@ class CredentialResponse(BaseModel):
     project_id: str
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+from models import GCPCredential
 
 async def _get_credential(db: AsyncSession, name: Optional[str] = None) -> GCPCredential:
     query = select(GCPCredential)
@@ -116,7 +189,7 @@ async def list_billing_accounts(name: Optional[str] = None, db: AsyncSession = D
         client = billing_v1.CloudBillingClient(credentials=creds)
 
         accounts = []
-        for account in client.list_billing_accounts():
+        for account in log_gcp_call("CloudBilling", "list_billing_accounts", client.list_billing_accounts):
             accounts.append({
                 "name": account.name,
                 "display_name": account.display_name,
@@ -145,7 +218,7 @@ async def list_billing_projects(
         request = billing_v1.ListProjectBillingInfoRequest(
             name=f"billingAccounts/{billing_account_id}"
         )
-        for proj in client.list_project_billing_info(request=request):
+        for proj in log_gcp_call("CloudBilling", "list_project_billing_info", client.list_project_billing_info, request=request):
             projects.append({
                 "project_id": proj.project_id,
                 "billing_account_name": proj.billing_account_name,
@@ -169,7 +242,7 @@ async def get_billing_summary(
         creds = _get_credentials_obj(credential)
         
         billing_client = billing_v1.CloudBillingClient(credentials=creds)
-        accounts = list(billing_client.list_billing_accounts())
+        accounts = list(log_gcp_call("CloudBilling", "list_billing_accounts", billing_client.list_billing_accounts))
         
         total_budget = 0
         currency_code = "USD"
@@ -177,7 +250,7 @@ async def get_billing_summary(
         if billing_account_id:
             budget_client = budgets_v1.BudgetServiceClient(credentials=creds)
             request = budgets_v1.ListBudgetsRequest(parent=f"billingAccounts/{billing_account_id}")
-            for budget in budget_client.list_budgets(request=request):
+            for budget in log_gcp_call("BudgetService", "list_budgets", budget_client.list_budgets, request=request):
                 if budget.amount.specified_amount:
                     total_budget += budget.amount.specified_amount.units
                     currency_code = budget.amount.specified_amount.currency_code
@@ -215,7 +288,7 @@ async def list_budgets(
         request = budgets_v1.ListBudgetsRequest(
             parent=f"billingAccounts/{billing_account_id}"
         )
-        for budget in client.list_budgets(request=request):
+        for budget in log_gcp_call("BudgetService", "list_budgets", client.list_budgets, request=request):
             budgets.append({
                 "name": budget.name,
                 "display_name": budget.display_name,
@@ -273,7 +346,7 @@ async def create_budget(
             parent=f"billingAccounts/{billing_account_id}",
             budget=budget,
         )
-        result = client.create_budget(request=request)
+        result = log_gcp_call("BudgetService", "create_budget", client.create_budget, request=request)
         return {"status": "success", "budget_name": result.name}
     except HTTPException:
         raise
@@ -296,7 +369,7 @@ async def delete_budget(
         request = budgets_v1.DeleteBudgetRequest(
             name=f"billingAccounts/{billing_account_id}/budgets/{budget_id}"
         )
-        client.delete_budget(request=request)
+        log_gcp_call("BudgetService", "delete_budget", client.delete_budget, request=request)
         return {"status": "success", "message": "Budget deleted"}
     except HTTPException:
         raise
@@ -342,7 +415,7 @@ async def query_billing_export(
             ORDER BY usage_start_time DESC
             LIMIT {limit}
         """
-        query_job = client.query(query)
+        query_job = log_gcp_call("BigQuery", "query", client.query, query)
         rows = [dict(row) for row in query_job]
         return {"status": "success", "rows": rows, "total": len(rows)}
     except HTTPException:
@@ -361,7 +434,7 @@ async def list_datasets(name: Optional[str] = None, db: AsyncSession = Depends(g
         )
 
         datasets = []
-        for ds in client.list_datasets():
+        for ds in log_gcp_call("BigQuery", "list_datasets", client.list_datasets):
             datasets.append({
                 "dataset_id": ds.dataset_id,
                 "full_dataset_id": ds.full_dataset_id,
@@ -387,7 +460,7 @@ async def list_reservations(
 
         parent = f"projects/{credential.project_id}/locations/{location}"
         reservations = []
-        for res in client.list_reservations(parent=parent):
+        for res in log_gcp_call("BigQueryReservation", "list_reservations", client.list_reservations, parent=parent):
             reservations.append({
                 "name": res.name,
                 "slot_capacity": res.slot_capacity,
@@ -413,7 +486,7 @@ async def list_transfer_configs(
 
         parent = f"projects/{credential.project_id}"
         configs = []
-        for config in client.list_transfer_configs(parent=parent):
+        for config in log_gcp_call("BigQueryDataTransfer", "list_transfer_configs", client.list_transfer_configs, parent=parent):
             configs.append({
                 "name": config.name,
                 "display_name": config.display_name,
@@ -427,79 +500,8 @@ async def list_transfer_configs(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/recommender/recommendations")
-async def list_recommendations(
-    zone: str = "us-central1-a",
-    recommender_id: str = "google.compute.instance.MachineTypeRecommender",
-    name: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        credential = await _get_credential(db, name)
-        creds = _get_credentials_obj(credential)
-        client = recommender_v1.RecommenderClient(credentials=creds)
-
-        parent = (
-            f"projects/{credential.project_id}/locations/{zone}"
-            f"/recommenders/{recommender_id}"
-        )
-        recommendations = []
-        for rec in client.list_recommendations(parent=parent):
-            recommendations.append({
-                "name": rec.name,
-                "description": rec.description,
-                "recommender_subtype": rec.recommender_subtype,
-                "priority": rec.priority.name,
-                "primary_impact": {
-                    "category": rec.primary_impact.category.name,
-                    "cost_projection": {
-                        "cost": {
-                            "currency_code": rec.primary_impact.cost_projection.cost.currency_code,
-                            "units": rec.primary_impact.cost_projection.cost.units,
-                            "nanos": rec.primary_impact.cost_projection.cost.nanos,
-                        },
-                        "duration": str(rec.primary_impact.cost_projection.duration),
-                    } if rec.primary_impact.cost_projection else None,
-                } if rec.primary_impact else None,
-                "state": rec.state_info.state.name if rec.state_info else None,
-            })
-        return {"status": "success", "recommendations": recommendations}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/recommender/insights")
-async def list_insights(
-    zone: str = "us-central1-a",
-    insight_type: str = "google.compute.instance.IdleResourceInsight",
-    name: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        credential = await _get_credential(db, name)
-        creds = _get_credentials_obj(credential)
-        client = recommender_v1.RecommenderClient(credentials=creds)
-
-        parent = (
-            f"projects/{credential.project_id}/locations/{zone}"
-            f"/insightTypes/{insight_type}"
-        )
-        insights = []
-        for insight in client.list_insights(parent=parent):
-            insights.append({
-                "name": insight.name,
-                "description": insight.description,
-                "category": insight.category.name,
-                "severity": insight.severity.name,
-                "state": insight.state_info.state.name if insight.state_info else None,
-            })
-        return {"status": "success", "insights": insights}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/monitoring/metrics")
 async def query_metrics(
@@ -521,7 +523,7 @@ async def query_metrics(
             end_time=timestamp_pb2.Timestamp(seconds=int(now)),
             start_time=timestamp_pb2.Timestamp(seconds=int(now - hours * 3600)),
         )
-        results = client.list_time_series(
+        results = log_gcp_call("Monitoring", "list_time_series", client.list_time_series,
             request={
                 "name": f"projects/{credential.project_id}",
                 "filter": f'metric.type = "{metric_type}"',
@@ -561,7 +563,7 @@ async def list_log_entries(
     try:
         credential = await _get_credential(db, name)
         creds = _get_credentials_obj(credential)
-        client = logging_v2.Client(credentials=creds, project=credential.project_id)
+        client = gcp_logging_v2.Client(credentials=creds, project=credential.project_id)
 
         from datetime import datetime, timedelta, timezone
 
@@ -570,9 +572,9 @@ async def list_log_entries(
         full_filter = f"{filter_str} AND {time_filter}" if filter_str else time_filter
 
         entries = []
-        for entry in client.list_entries(
+        for entry in log_gcp_call("Logging", "list_entries", client.list_entries,
             filter_=full_filter,
-            order_by=logging_v2.DESCENDING,
+            order_by=gcp_logging_v2.DESCENDING,
             max_results=limit,
         ):
             entries.append({
@@ -607,7 +609,7 @@ async def list_assets(
             asset_types=asset_types or [],
         )
         assets = []
-        for asset in client.list_assets(request=request):
+        for asset in log_gcp_call("Asset", "list_assets", client.list_assets, request=request):
             assets.append({
                 "name": asset.name,
                 "asset_type": asset.asset_type,
@@ -640,7 +642,7 @@ async def search_assets(
             asset_types=asset_types or [],
         )
         resources = []
-        for resource in client.search_all_resources(request=request):
+        for resource in log_gcp_call("Asset", "search_all_resources", client.search_all_resources, request=request):
             resources.append({
                 "name": resource.name,
                 "asset_type": resource.asset_type,
@@ -670,7 +672,7 @@ async def list_quotas(
 
         parent = f"projects/{credential.project_id}/locations/global/services/{service}"
         quota_infos = []
-        for qi in client.list_quota_infos(parent=parent):
+        for qi in log_gcp_call("CloudQuotas", "list_quota_infos", client.list_quota_infos, parent=parent):
             quota_infos.append({
                 "name": qi.name,
                 "quota_id": qi.quota_id,
@@ -697,7 +699,7 @@ async def list_quota_preferences(
 
         parent = f"projects/{credential.project_id}/locations/global"
         preferences = []
-        for pref in client.list_quota_preferences(parent=parent):
+        for pref in log_gcp_call("CloudQuotas", "list_quota_preferences", client.list_quota_preferences, parent=parent):
             preferences.append({
                 "name": pref.name,
                 "quota_id": pref.quota_id,
@@ -722,7 +724,7 @@ async def list_org_constraints(
 
         parent = f"projects/{credential.project_id}"
         constraints = []
-        for constraint in client.list_constraints(parent=parent):
+        for constraint in log_gcp_call("OrgPolicy", "list_constraints", client.list_constraints, parent=parent):
             constraints.append({
                 "name": constraint.name,
                 "display_name": constraint.display_name,
@@ -785,7 +787,7 @@ async def list_services(
             filter=filter_str,
         )
         services = []
-        for svc in client.list_services(request=request):
+        for svc in log_gcp_call("ServiceUsage", "list_services", client.list_services, request=request):
             services.append({
                 "name": svc.name,
                 "config": {
@@ -815,8 +817,8 @@ async def enable_service(
         request = service_usage_v1.EnableServiceRequest(
             name=f"projects/{credential.project_id}/services/{service_name}"
         )
-        operation = client.enable_service(request=request)
-        result = operation.result()
+        operation = log_gcp_call("ServiceUsage", "enable_service", client.enable_service, request=request)
+        result = log_gcp_call("Operation", "result", operation.result)
         return {"status": "success", "service": result.service.name if result.service else service_name}
     except HTTPException:
         raise
@@ -847,6 +849,189 @@ async def disable_service(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/dashboard/stats")
+async def get_dashboard_stats(
+    billing_account_id: Optional[str] = None,
+    dataset: str = "billing_export",
+    table: str = "gcp_billing_export_v1",
+    name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        credential = await _get_credential(db, name)
+        creds_obj = _get_credentials_obj(credential)
+
+        from datetime import timedelta
+        now = datetime.now()
+        current_month_start = now.replace(day=1).strftime("%Y-%m-%d")
+        current_month_end = now.strftime("%Y-%m-%d")
+
+        last_month_end = (now.replace(day=1) - timedelta(days=1))
+        last_month_start = last_month_end.replace(day=1).strftime("%Y-%m-%d")
+        last_month_end_str = last_month_end.strftime("%Y-%m-%d")
+
+        seven_months_ago = now.replace(day=1)
+        for _ in range(6):
+            seven_months_ago = (seven_months_ago - timedelta(days=1)).replace(day=1)
+        seven_months_start = seven_months_ago.strftime("%Y-%m-%d")
+
+        total_cost = 0
+        top_services = []
+        cost_trend = 0
+        monthly_data = []
+        budget_used = 0
+        alerts = 0
+        active_resources = 0
+
+        try:
+            bq_client = bigquery.Client(
+                credentials=creds_obj, project=credential.project_id
+            )
+
+            current_cost_query = f"""
+                SELECT
+                    IFNULL(SUM(cost), 0) AS total_cost
+                FROM `{credential.project_id}.{dataset}.{table}`
+                WHERE usage_start_time >= '{current_month_start}'
+                  AND usage_start_time < '{current_month_end}T23:59:59'
+            """
+            current_result = log_gcp_call("BigQuery", "query", bq_client.query, current_cost_query)
+            for row in current_result:
+                total_cost = float(row["total_cost"])
+
+            service_query = f"""
+                SELECT
+                    service.description AS service_name,
+                    ROUND(SUM(cost), 2) AS service_cost
+                FROM `{credential.project_id}.{dataset}.{table}`
+                WHERE usage_start_time >= '{current_month_start}'
+                  AND usage_start_time < '{current_month_end}T23:59:59'
+                GROUP BY service.description
+                HAVING service_cost > 0
+                ORDER BY service_cost DESC
+                LIMIT 5
+            """
+            service_result = log_gcp_call("BigQuery", "query", bq_client.query, service_query)
+            for row in service_result:
+                top_services.append({
+                    "name": row["service_name"],
+                    "cost": round(float(row["service_cost"]))
+                })
+
+            last_cost_query = f"""
+                SELECT
+                    IFNULL(SUM(cost), 0) AS total_cost
+                FROM `{credential.project_id}.{dataset}.{table}`
+                WHERE usage_start_time >= '{last_month_start}'
+                  AND usage_start_time < '{last_month_end_str}T23:59:59'
+            """
+            last_result = log_gcp_call("BigQuery", "query", bq_client.query, last_cost_query)
+            for row in last_result:
+                last_total = float(row["total_cost"])
+                if last_total > 0:
+                    cost_trend = round(((total_cost - last_total) / last_total) * 100, 1)
+
+            monthly_query = f"""
+                SELECT
+                    FORMAT_TIMESTAMP('%Y-%m', usage_start_time) AS month_key,
+                    EXTRACT(MONTH FROM usage_start_time) AS month_num,
+                    ROUND(SUM(cost), 2) AS monthly_cost
+                FROM `{credential.project_id}.{dataset}.{table}`
+                WHERE usage_start_time >= '{seven_months_start}'
+                GROUP BY month_key, month_num
+                ORDER BY month_key ASC
+            """
+            month_names = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
+            monthly_result = bq_client.query(monthly_query)
+            for row in monthly_result:
+                m_idx = int(row["month_num"]) - 1
+                monthly_data.append({
+                    "month": month_names[m_idx] if 0 <= m_idx < 12 else str(row["month_key"]),
+                    "cost": round(float(row["monthly_cost"]))
+                })
+        except Exception as e:
+            print(f"error: {e}")
+
+        budget_used = 0
+        alertsCount = 0
+        recent_alerts = []
+
+        if billing_account_id:
+            try:
+                budget_client = budgets_v1.BudgetServiceClient(credentials=creds_obj)
+                request = budgets_v1.ListBudgetsRequest(
+                    parent=f"billingAccounts/{billing_account_id}"
+                )
+                budget_list = list(log_gcp_call("BudgetService", "list_budgets", budget_client.list_budgets, request=request))
+                if budget_list:
+                    budget = budget_list[0]
+                    if budget.amount.specified_amount:
+                        budget_amount = float(budget.amount.specified_amount.units)
+                        if budget_amount > 0:
+                            budget_used = round((total_cost / budget_amount) * 100)
+                    for b in budget_list:
+                        if b.amount.specified_amount:
+                            b_amount = float(b.amount.specified_amount.units)
+                            if b_amount > 0 and total_cost > b_amount * 0.8:
+                                alertsCount += 1
+                                recent_alerts.append({
+                                    "message": f"예산 초과: {b.display_name} 예산의 {round((total_cost/b_amount)*100)}% 사용",
+                                    "severity": "error" if total_cost > b_amount else "warning",
+                                    "date": datetime.now().strftime("%Y-%m-%d")
+                                })
+            except Exception as e:
+                print(f"error: {e}")
+
+
+        try:
+            asset_client = asset_v1.AssetServiceClient(credentials=creds_obj)
+            request = asset_v1.ListAssetsRequest(
+                parent=f"projects/{credential.project_id}",
+                content_type=asset_v1.ContentType.RESOURCE,
+                asset_types=[
+                    "compute.googleapis.com/Instance",
+                    "storage.googleapis.com/Bucket",
+                    "sqladmin.googleapis.com/Instance",
+                    "container.googleapis.com/Cluster",
+                ],
+            )
+            count = 0
+            res_summary = []
+            for asset in asset_client.list_assets(request=request):
+                count += 1
+                if len(res_summary) < 5:
+                    res_summary.append({
+                        "name": asset.name.split('/')[-1],
+                        "type": asset.asset_type.split('/')[-1],
+                        "status": "Active"
+                    })
+                if count >= 500:
+                    break
+            active_resources = count
+            resources_summary = res_summary
+        except Exception as e:
+            print(f"Asset count error: {e}")
+            resources_summary = []
+
+        return {
+            "totalCost": round(total_cost),
+            "costTrend": cost_trend,
+            "topServices": top_services,
+            "monthlyData": monthly_data,
+            "activeResources": active_resources,
+            "budgetUsed": budget_used,
+            "alerts": alertsCount,
+            "recentAlerts": recent_alerts,
+            "resourcesSummary": resources_summary,
+            "timestamp": datetime.now().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8002, reload=True)
+

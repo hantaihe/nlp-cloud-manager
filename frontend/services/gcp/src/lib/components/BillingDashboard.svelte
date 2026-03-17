@@ -3,11 +3,14 @@
 	import FilterPanel from './FilterPanel.svelte';
 	import BillingAccounts from './BillingAccounts.svelte';
 	import BudgetsTable from './BudgetsTable.svelte';
-	import RecommendationsPanel from './RecommendationsPanel.svelte';
 	import AssetsPanel from './AssetsPanel.svelte';
 	import ServicesPanel from './ServicesPanel.svelte';
 	import CredentialsManager from './CredentialsManager.svelte';
 	import CostSummary from './CostSummary.svelte';
+	import QuotasPanel from './QuotasPanel.svelte';
+	import GovernancePanel from './GovernancePanel.svelte';
+	import MonitoringPanel from './MonitoringPanel.svelte';
+	import LoggingPanel from './LoggingPanel.svelte';
 
 	const API_BASE = 'http://localhost:8002';
 
@@ -16,8 +19,6 @@
 
 	let billingAccounts: any[] = $state([]);
 	let budgets: any[] = $state([]);
-	let recommendations: any[] = $state([]);
-	let insights: any[] = $state([]);
 	let assets: any[] = $state([]);
 	let services: any[] = $state([]);
 	let summary: any = $state({});
@@ -30,7 +31,9 @@
 		end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1)
 			.toISOString()
 			.split('T')[0] as string,
-		activeTab: 'billing' as string
+		activeTab: 'billing' as string,
+		zone: 'us-central1-a' as string,
+		insightType: 'google.compute.instance.IdleResourceInsight' as string
 	});
 
 	function getActiveName() {
@@ -47,18 +50,20 @@
 				case 'billing':
 					await fetchBillingData(name);
 					break;
-				case 'bigquery':
-					break;
-				case 'recommender':
-					await fetchRecommenderData(name);
-					break;
-				case 'monitoring':
-					break;
 				case 'assets':
 					await fetchAssetsData(name);
 					break;
+				case 'quotas':
+					await fetchQuotasData(name);
+					break;
 				case 'governance':
 					await fetchGovernanceData(name);
+					break;
+				case 'monitoring':
+					await fetchMonitoringData(name);
+					break;
+				case 'logging':
+					await fetchLoggingData(name);
 					break;
 			}
 		} catch (e: any) {
@@ -109,31 +114,6 @@
 		}
 	}
 
-	async function fetchRecommenderData(name: string) {
-		const [recRes, insightRes] = await Promise.allSettled([
-			fetch(`${API_BASE}/recommender/recommendations?name=${name}`),
-			fetch(`${API_BASE}/recommender/insights?name=${name}`)
-		]);
-
-		if (recRes.status === 'fulfilled') {
-			if (!recRes.value.ok) {
-				const errorData = await recRes.value.json();
-				throw new Error(errorData.detail || 'Failed to fetch recommendations');
-			}
-			const data = await recRes.value.json();
-			recommendations = data.recommendations || [];
-		}
-
-		if (insightRes.status === 'fulfilled') {
-			if (!insightRes.value.ok) {
-				const errorData = await insightRes.value.json();
-				throw new Error(errorData.detail || 'Failed to fetch insights');
-			}
-			const data = await insightRes.value.json();
-			insights = data.insights || [];
-		}
-	}
-
 	async function fetchAssetsData(name: string) {
 		const res = await fetch(`${API_BASE}/assets?name=${name}`);
 		if (!res.ok) {
@@ -145,13 +125,43 @@
 	}
 
 	async function fetchGovernanceData(name: string) {
-		const res = await fetch(`${API_BASE}/service-usage/services?name=${name}`);
+		const res = await fetch(`${API_BASE}/org-policy/constraints?name=${name}`);
 		if (!res.ok) {
 			const errorData = await res.json();
-			throw new Error(errorData.detail || 'Failed to fetch services');
+			throw new Error(errorData.detail || 'Failed to fetch governance constraints');
 		}
 		const data = await res.json();
-		services = data.services || [];
+		services = data.constraints || [];
+	}
+
+	async function fetchQuotasData(name: string) {
+		const res = await fetch(`${API_BASE}/quotas?name=${name}`);
+		if (!res.ok) {
+			const errorData = await res.json();
+			throw new Error(errorData.detail || 'Failed to fetch quotas');
+		}
+		const data = await res.json();
+		services = data.quota_infos || [];
+	}
+
+	async function fetchMonitoringData(name: string) {
+		const res = await fetch(`${API_BASE}/monitoring/metrics?name=${name}`);
+		if (!res.ok) {
+			const errorData = await res.json();
+			throw new Error(errorData.detail || 'Failed to fetch monitoring');
+		}
+		const data = await res.json();
+		services = data.time_series || [];
+	}
+
+	async function fetchLoggingData(name: string) {
+		const res = await fetch(`${API_BASE}/logging/entries?name=${name}`);
+		if (!res.ok) {
+			const errorData = await res.json();
+			throw new Error(errorData.detail || 'Failed to fetch logging entries');
+		}
+		const data = await res.json();
+		services = data.entries || [];
 	}
 
 	function handleApplyFilters(newFilters: any) {
@@ -182,7 +192,7 @@
 		</div>
 	{:else if error}
 		<div class="error-card glass">
-			<p>⚠️ {error}</p>
+			<p>Error: {error}</p>
 			<button onclick={fetchData}>재시도</button>
 		</div>
 	{:else}
@@ -197,17 +207,25 @@
 				<div class="span-all">
 					<BudgetsTable {budgets} />
 				</div>
-			{:else if filters.activeTab === 'recommender'}
-				<div class="span-all">
-					<RecommendationsPanel {recommendations} {insights} />
-				</div>
 			{:else if filters.activeTab === 'assets'}
 				<div class="span-all">
 					<AssetsPanel {assets} />
 				</div>
 			{:else if filters.activeTab === 'governance'}
 				<div class="span-all">
-					<ServicesPanel {services} />
+					<GovernancePanel constraints={services as any} />
+				</div>
+			{:else if filters.activeTab === 'quotas'}
+				<div class="span-all">
+					<QuotasPanel quotas={services as any} />
+				</div>
+			{:else if filters.activeTab === 'monitoring'}
+				<div class="span-all">
+					<MonitoringPanel metrics={services as any} />
+				</div>
+			{:else if filters.activeTab === 'logging'}
+				<div class="span-all">
+					<LoggingPanel logs={services as any} />
 				</div>
 			{/if}
 		</div>
@@ -322,15 +340,6 @@
 		padding: 0.5rem 1rem;
 		border-radius: 0.5rem;
 		cursor: pointer;
-	}
-
-	.coming-soon {
-		grid-column: 1 / -1;
-		text-align: center;
-		padding: 3rem;
-		border-radius: 1rem;
-		color: var(--color-text-muted);
-		font-size: 1.1rem;
 	}
 
 	@media (max-width: 900px) {

@@ -23,23 +23,19 @@
 </script>
 
 <div class="freetier-container glass">
-	<h3>Free Tier Usage</h3>
+	<h3>Top Services</h3>
 	<div class="usage-grid">
 		{#if freeTierUsage.length === 0}
-			<p class="empty">Free Tier 사용 데이터가 없습니다.</p>
+			<p class="empty">서비스 사용 데이터가 없습니다. (이번 달)</p>
 		{:else}
-			{#each freeTierUsage as usage}
+			{#each freeTierUsage as service}
 				<div class="usage-item">
-					<div class="service-name">{usage.service || 'Unknown'}</div>
+					<div class="service-name">{service.name || 'Unknown'}</div>
 					<div class="usage-info">
-						<span class="usage-text">{formatUsage(usage)}</span>
-						<span class="operation">{usage.operation || ''}</span>
+						<span class="usage-text">${service.cost?.toLocaleString()}</span>
 					</div>
 					<div class="progress-bar">
-						<div
-							class="progress-fill"
-							style="width: {getProgress(usage)}%; background: {getProgressColor(usage)}"
-						></div>
+						<div class="progress-fill" style="width: 100%; background: var(--color-accent)"></div>
 					</div>
 				</div>
 			{/each}

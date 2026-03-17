@@ -9,13 +9,6 @@ pnpm install
 pnpm run dev
 ```
 
-### Sample
-```bash
-cd frontend/services/sample
-pnpm install
-pnpm run dev
-```
-
 ### AWS
 ```bash
 cd frontend/services/aws
@@ -42,13 +35,6 @@ pnpm run dev
 ### Base
 ```bash
 cd backend/base
-pnpm install
-pnpm run start:dev
-```
-
-### Sample
-```bash
-cd backend/sample
 pnpm install
 pnpm run start:dev
 ```

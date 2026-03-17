@@ -2,21 +2,22 @@
 	import { onMount } from 'svelte';
 	import FilterPanel from './FilterPanel.svelte';
 	import CostSummary from './CostSummary.svelte';
+	import CostBarChart from './CostBarChart.svelte';
 	import BudgetsTable from './BudgetsTable.svelte';
 	import FreeTierStatus from './FreeTierStatus.svelte';
 	import CredentialsManager from './CredentialsManager.svelte';
 
-	let summaryData: any = null;
-	let loading = true;
-	let error: string | null = null;
-	let filters = {
+	let summaryData: any = $state(null);
+	let loading = $state(true);
+	let error: string | null = $state(null);
+	let filters = $state({
 		start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
 		end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1)
 			.toISOString()
 			.split('T')[0],
-		granularity: 'MONTHLY' as 'DAILY' | 'MONTHLY' | 'HOURLY',
+		granularity: 'DAILY' as 'DAILY' | 'MONTHLY' | 'HOURLY',
 		groupBy: [] as string[]
-	};
+	});
 
 	async function fetchSummary() {
 		loading = true;
@@ -28,7 +29,7 @@
 			const summaryRes = await fetch(`http://localhost:3002/billing/summary?name=${activeName}`);
 			if (!summaryRes.ok) {
 				const errData = await summaryRes.json();
-				throw new Error(errData.message || 'AWS 정보를 불러오기 실패');
+				throw new Error(errData.message || 'AWS 정보 불러오기 실패');
 			}
 			const summary = await summaryRes.json();
 
@@ -42,7 +43,7 @@
 			filters.groupBy.forEach((dim) => queryParams.append('group_by_dimension', dim));
 
 			const costRes = await fetch(`http://localhost:3002/billing/cost?${queryParams.toString()}`);
-			if (!costRes.ok) throw new Error('AWS 정보를 가져오기 실패');
+			if (!costRes.ok) throw new Error('AWS 정보 불러오기 실패');
 			const costData = await costRes.json();
 
 			summaryData = {
@@ -75,7 +76,7 @@
 		</div>
 	</header>
 
-	<FilterPanel {filters} onApply={handleApplyFilters} />
+	<FilterPanel bind:filters onApply={handleApplyFilters} />
 
 	{#if loading}
 		<div class="loader">
@@ -84,13 +85,17 @@
 		</div>
 	{:else if error}
 		<div class="error-card glass">
-			<p>⚠️ {error}</p>
+			<p>Error: {error}</p>
 			<button on:click={fetchSummary}>재시도</button>
 		</div>
 	{:else}
 		<div class="grid">
 			<div class="span-all">
 				<CostSummary costData={summaryData.currentMonthCost} />
+			</div>
+
+			<div class="span-all">
+				<CostBarChart costData={summaryData.currentMonthCost} {loading} />
 			</div>
 
 			<div class="column">

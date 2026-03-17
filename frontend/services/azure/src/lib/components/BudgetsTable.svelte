@@ -18,35 +18,35 @@
 </script>
 
 <div class="budgets-container glass">
-	<h3>Budgets</h3>
+	<h3>Alerts & Notifications</h3>
 	<table>
 		<thead>
 			<tr>
-				<th>Name</th>
-				<th>Limit</th>
-				<th>Actual</th>
-				<th>Status</th>
+				<th>메시지</th>
+				<th>상태</th>
+				<th>날짜</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#if budgets.length === 0}
 				<tr>
-					<td colspan="4" class="empty">Budget을 찾을 수 없습니다.</td>
+					<td colspan="3" class="empty">최근 알림이 없습니다.</td>
 				</tr>
 			{:else}
-				{#each budgets as budget}
+				{#each budgets as alert}
 					<tr>
-						<td class="name">{budget.BudgetName}</td>
-						<td class="limit">{formatCurrency(budget.BudgetLimit?.Amount)}</td>
-						<td class="spend">{formatCurrency(budget.CalculatedSpend?.ActualSpend?.Amount)}</td>
+						<td class="name">{alert.message}</td>
 						<td>
-							<div class="status-pill" style="--status-color: {getStatusColor(budget)}">
-								{Number(budget.CalculatedSpend?.ActualSpend?.Amount || 0) >
-								Number(budget.BudgetLimit?.Amount || 0)
-									? 'EXCEEDED'
-									: 'OK'}
+							<div
+								class="status-pill"
+								style="--status-color: {alert.severity === 'error'
+									? 'var(--color-danger)'
+									: 'var(--color-warning)'}"
+							>
+								{alert.severity}
 							</div>
 						</td>
+						<td class="date">{alert.date}</td>
 					</tr>
 				{/each}
 			{/if}

@@ -73,11 +73,26 @@
 		class="inner-close-btn"
 		class:hidden={!isOpen}
 		onclick={toggleChat}
-		aria-label="Close chat">×</button
+		aria-label="Close chat">&times;</button
 	>
 
 	<button class="fab" onclick={toggleChat} aria-label="Open chat">
-		<span>{isOpen ? '×' : '💬'}</span>
+		<span>
+			{#if isOpen}
+				&times;
+			{:else}
+				<svg
+					width="24"
+					height="24"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z" /></svg
+				>
+			{/if}
+		</span>
 	</button>
 </div>
 

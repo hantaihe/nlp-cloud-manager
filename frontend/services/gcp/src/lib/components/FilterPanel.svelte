@@ -4,6 +4,8 @@
 		start: string;
 		end: string;
 		activeTab: string;
+		zone: string;
+		insightType: string;
 	}
 
 	interface Props {
@@ -20,18 +22,20 @@
 			end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1)
 				.toISOString()
 				.split('T')[0],
-			activeTab: 'billing'
+			activeTab: 'billing',
+			zone: 'us-central1-a',
+			insightType: 'google.compute.instance.IdleResourceInsight'
 		}),
 		onApply
 	}: Props = $props();
 
 	const tabs = [
-		{ id: 'billing', label: '💰 Billing', icon: '💰' },
-		{ id: 'bigquery', label: '📊 BigQuery', icon: '📊' },
-		{ id: 'recommender', label: '🎯 Recommender', icon: '🎯' },
-		{ id: 'monitoring', label: '📈 Monitoring', icon: '📈' },
-		{ id: 'assets', label: '🗂️ Assets', icon: '🗂️' },
-		{ id: 'governance', label: '🏛️ Governance', icon: '🏛️' }
+		{ id: 'billing', label: 'Billing' },
+		{ id: 'assets', label: 'Assets' },
+		{ id: 'quotas', label: 'Quotas' },
+		{ id: 'governance', label: 'Governance' },
+		{ id: 'monitoring', label: 'Monitoring' },
+		{ id: 'logging', label: 'Logging' }
 	];
 
 	function handleApply() {
@@ -47,7 +51,10 @@
 				<button
 					type="button"
 					class:active={filters.activeTab === tab.id}
-					onclick={() => (filters.activeTab = tab.id)}
+					onclick={() => {
+						filters.activeTab = tab.id;
+						handleApply();
+					}}
 				>
 					{tab.label}
 				</button>
@@ -68,7 +75,7 @@
 	{/if}
 
 	<div class="filter-section">
-		<label for="start-date">Time Period</label>
+		<label for="start-date">기간</label>
 		<div class="date-inputs">
 			<input id="start-date" type="date" bind:value={filters.start} aria-label="Start Date" />
 			<span>to</span>

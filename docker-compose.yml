@@ -19,24 +19,6 @@ services:
     environment:
       - NODE_ENV=production
 
-  sample-fe:
-    build:
-      context: ./frontend/services/sample
-      dockerfile: Dockerfile
-    ports:
-      - "5174:5174"
-    environment:
-      - NODE_ENV=production
-
-  sample-be:
-    build:
-      context: ./backend/sample
-      dockerfile: Dockerfile
-    ports:
-      - "3001:3001"
-    environment:
-      - NODE_ENV=production
-
   mysql-db:
     image: mysql:8.0
     ports:

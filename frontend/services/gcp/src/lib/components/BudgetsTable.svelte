@@ -26,19 +26,19 @@
 </script>
 
 <div class="budgets-container glass">
-	<h3>📊 Budgets</h3>
+	<h3>예산</h3>
 	<table>
 		<thead>
 			<tr>
-				<th>Name</th>
-				<th>Amount</th>
-				<th>Thresholds</th>
+				<th>이름</th>
+				<th>금액</th>
+				<th>예산 한도</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#if budgets.length === 0}
 				<tr>
-					<td colspan="3" class="empty">Budget을 찾을 수 없습니다.</td>
+					<td colspan="3" class="empty">예산을 찾을 수 없습니다.</td>
 				</tr>
 			{:else}
 				{#each budgets as budget}

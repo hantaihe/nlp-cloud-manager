@@ -1,7 +1,8 @@
 
 export interface DashboardItem {
     id: string;
-    type: 'sample' | 'aws' | 'azure' | 'gcp';
+    type: string;
+    category: 'aws' | 'azure' | 'gcp' | 'combined';
     label: string;
     visible: boolean;
     cols: number;

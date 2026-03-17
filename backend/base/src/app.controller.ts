@@ -10,15 +10,6 @@ export class AppController {
     private readonly dashboardLayoutRepository: Repository<DashboardLayout>,
   ) { }
 
-  @Get('sample')
-  getSampleData() {
-    return {
-      status: 'active',
-      message: 'Hello from the NestJS Backend!',
-      timestamp: new Date().toISOString(),
-    };
-  }
-
   @Get('dashboard/layout')
   async getLayout(@Query('userId') userId: string) {
     const layout = await this.dashboardLayoutRepository.findOne({

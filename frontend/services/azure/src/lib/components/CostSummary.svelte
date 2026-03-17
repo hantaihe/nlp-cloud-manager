@@ -1,5 +1,6 @@
 <script lang="ts">
-	export let costData: any;
+	export let costData: any[] = [];
+	export let totalCost: number = 0;
 
 	function formatCurrency(amount: string | number) {
 		return new Intl.NumberFormat('en-US', {
@@ -8,9 +9,9 @@
 		}).format(Number(amount));
 	}
 
-	$: currentCost = costData?.[0]?.Total?.UnblendedCost?.Amount || 0;
-	$: startDate = costData?.[0]?.TimePeriod?.Start || '';
-	$: endDate = costData?.[0]?.TimePeriod?.End || '';
+	$: currentCost = totalCost;
+	$: startDate = costData?.[0]?.month || '';
+	$: endDate = costData?.[costData.length - 1]?.month || '';
 </script>
 
 <div class="cost-card glass">
@@ -53,6 +54,7 @@
 		margin: 1.5rem 0;
 		background: linear-gradient(135deg, var(--color-accent), var(--color-purple));
 		-webkit-background-clip: text;
+		background-clip: text;
 		-webkit-text-fill-color: transparent;
 		filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 	}

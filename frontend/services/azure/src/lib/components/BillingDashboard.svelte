@@ -6,17 +6,17 @@
 	import FreeTierStatus from './FreeTierStatus.svelte';
 	import CredentialsManager from './CredentialsManager.svelte';
 
-	let summaryData: any = null;
-	let loading = true;
-	let error: string | null = null;
-	let filters = {
+	let summaryData: any = $state(null);
+	let loading = $state(true);
+	let error: string | null = $state(null);
+	let filters = $state({
 		start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
 		end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1)
 			.toISOString()
 			.split('T')[0],
 		granularity: 'MONTHLY' as 'DAILY' | 'MONTHLY' | 'HOURLY',
 		groupBy: [] as string[]
-	};
+	});
 
 	async function fetchSummary() {
 		loading = true;
@@ -25,13 +25,6 @@
 		const activeName = localStorage.getItem('azure_active_name') || '';
 
 		try {
-			const summaryRes = await fetch(`http://localhost:8001/billing?name=${activeName}`);
-			if (!summaryRes.ok) {
-				const errData = await summaryRes.json();
-				throw new Error(errData.detail || 'Azure 정보를 불러오기 실패');
-			}
-			const summary = await summaryRes.json();
-
 			const queryParams = new URLSearchParams({
 				name: activeName,
 				start: filters.start,
@@ -39,16 +32,16 @@
 				granularity: filters.granularity
 			});
 
-			filters.groupBy.forEach((dim) => queryParams.append('group_by_dimension', dim));
+			filters.groupBy.forEach((dim) => queryParams.append('group_by', dim));
 
-			const costRes = await fetch(`http://localhost:8001/consumption?${queryParams.toString()}`);
-			if (!costRes.ok) throw new Error('Azure 정보를 가져오기 실패');
-			const costData = await costRes.json();
-
-			summaryData = {
-				...summary,
-				currentMonthCost: costData.ResultsByTime || costData.currentMonthCost || []
-			};
+			const statsRes = await fetch(
+				`http://localhost:8001/dashboard/stats?${queryParams.toString()}`
+			);
+			if (!statsRes.ok) {
+				const errData = await statsRes.json();
+				throw new Error(errData.detail || 'Azure 정보를 불러오기 실패');
+			}
+			summaryData = await statsRes.json();
 		} catch (e: any) {
 			error = e.message;
 		} finally {
@@ -71,11 +64,11 @@
 		<h1>Azure Billing</h1>
 		<div class="header-actions">
 			<CredentialsManager />
-			<button on:click={fetchSummary} class="refresh-btn"> Refresh </button>
+			<button onclick={fetchSummary} class="refresh-btn"> Refresh </button>
 		</div>
 	</header>
 
-	<FilterPanel {filters} onApply={handleApplyFilters} />
+	<FilterPanel bind:filters onApply={handleApplyFilters} />
 
 	{#if loading}
 		<div class="loader">
@@ -84,21 +77,21 @@
 		</div>
 	{:else if error}
 		<div class="error-card glass">
-			<p>⚠️ {error}</p>
-			<button on:click={fetchSummary}>재시도</button>
+			<p>Error: {error}</p>
+			<button onclick={fetchSummary}>재시도</button>
 		</div>
 	{:else}
 		<div class="grid">
 			<div class="span-all">
-				<CostSummary costData={summaryData.currentMonthCost} />
+				<CostSummary costData={summaryData.monthlyData || []} totalCost={summaryData.totalCost} />
 			</div>
 
 			<div class="column">
-				<BudgetsTable budgets={summaryData.budgets || []} />
+				<BudgetsTable budgets={summaryData.recentAlerts || []} />
 			</div>
 
 			<div class="column">
-				<FreeTierStatus freeTierUsage={summaryData.freeTierUsage || []} />
+				<FreeTierStatus freeTierUsage={summaryData.topServices || []} />
 			</div>
 		</div>
 	{/if}

@@ -14,15 +14,14 @@
 	}: { filters?: any; onApply: (filters: any) => void } = $props();
 
 	const dimensions = [
+		{ id: 'ServiceName', label: 'Service Name' },
 		{ id: 'ResourceGroup', label: 'Resource Group' },
 		{ id: 'Location', label: 'Location' },
-		{ id: 'ServiceName', label: 'Service Name' },
 		{ id: 'MeterCategory', label: 'Meter Category' },
-		{ id: 'PublisherType', label: 'Publisher Type' },
-		{ id: 'ReservationName', label: 'Reservation Name' }
+		{ id: 'PublisherType', label: 'Publisher Type' }
 	];
 
-	const granularities = ['Daily', 'Monthly'];
+	const granularities = ['DAILY', 'MONTHLY'];
 
 	function toggleGroupBy(dimId: string) {
 		if (filters.groupBy.includes(dimId)) {

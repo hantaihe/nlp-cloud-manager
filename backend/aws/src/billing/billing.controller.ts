@@ -96,4 +96,10 @@ export class BillingController {
         const creds = await this.billingService.getStoredCredentials(name);
         return this.billingService.getBillingSummary(creds ?? undefined);
     }
+
+    @Get('dashboard/stats')
+    async getDashboardStats(@Query('name') name?: string) {
+        const creds = await this.billingService.getStoredCredentials(name);
+        return this.billingService.getDashboardStats(creds ?? undefined);
+    }
 }

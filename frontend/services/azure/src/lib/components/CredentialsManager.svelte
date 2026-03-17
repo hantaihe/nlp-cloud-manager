@@ -102,7 +102,7 @@
 
 <div class="credentials-manager">
 	<button class="toggle-btn" onclick={() => (isVisible = !isVisible)}>
-		{activeName ? `⚙️ Azure: ${activeName}` : '⚠️ Azure Setup Required'}
+		{activeName ? `Azure: ${activeName}` : 'Azure Setup Required'}
 	</button>
 
 	{#if isVisible}
@@ -181,7 +181,7 @@
 					</div>
 				</div>
 
-				<button class="save-btn" onclick={saveCredential}>Save Credential</button>
+				<button class="save-btn" onclick={saveCredential}>저장</button>
 			</div>
 		</div>
 	{/if}
