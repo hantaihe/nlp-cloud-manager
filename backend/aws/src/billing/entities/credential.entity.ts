@@ -2,10 +2,10 @@ import { Entity, Column, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeor
 
 @Entity('aws_credentials')
 export class Credential {
-    @PrimaryGeneratedColumn()
-    id: number;
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
 
-    @Column()
+    @Column({ unique: true })
     name: string;
 
     @Column()

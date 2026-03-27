@@ -1,6 +1,7 @@
 <script lang="ts">
 	interface Summary {
 		total_budget?: number;
+		total_cost?: number;
 		currency_code?: string;
 		active_accounts?: number;
 		account_count?: number;
@@ -8,9 +9,13 @@
 		end_date?: string;
 	}
 
-	let { summary = {} }: { summary: Summary } = $props();
+	interface Props {
+		summary: Summary;
+	}
 
-	function formatCurrency(amount: number, code: string) {
+	let { summary = {} as Summary }: Props = $props();
+
+	function formatCurrency(amount: number, code?: string) {
 		return new Intl.NumberFormat('en-US', {
 			style: 'currency',
 			currency: code || 'USD'
@@ -19,9 +24,13 @@
 </script>
 
 <div class="cost-card glass">
-	<h3>Current Month Budget Summary</h3>
-	<div class="amount">{formatCurrency(summary?.total_budget || 0, summary?.currency_code)}</div>
+	<h3>Current Month Actual Cost</h3>
+	<div class="amount">{formatCurrency(summary?.total_cost || 0, summary?.currency_code)}</div>
 	<div class="stats">
+		<div class="stat">
+			<span class="label">Total Budget</span>
+			<span class="value">{formatCurrency(summary?.total_budget || 0, summary?.currency_code)}</span>
+		</div>
 		<div class="stat">
 			<span class="label">Billing Accounts</span>
 			<span class="value">{summary?.active_accounts || 0} / {summary?.account_count || 0}</span>

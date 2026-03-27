@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { themeStore } from '$lib/theme.svelte';
 	import { untrack, onMount } from 'svelte';
 
@@ -13,8 +14,37 @@
 
 	let themeSrc = $derived(() => {
 		const baseUrl = 'http://localhost:3106';
-		return `${baseUrl}?theme=${themeStore.current}`;
+		const aws = browser ? localStorage.getItem('aws_active_name') || '' : '';
+		const azure = browser ? localStorage.getItem('azure_active_name') || '' : '';
+		const gcp = browser ? localStorage.getItem('gcp_active_name') || '' : '';
+		return `${baseUrl}?theme=${themeStore.current}&aws=${aws}&azure=${azure}&gcp=${gcp}`;
 	});
+
+	async function fetchDefaultCredentials() {
+		if (!browser) return;
+
+		const services = [
+			{ key: 'aws_active_name', url: 'http://localhost:3002/credentials' },
+			{ key: 'azure_active_name', url: 'http://localhost:8001/credentials' },
+			{ key: 'gcp_active_name', url: 'http://localhost:8002/credentials' }
+		];
+
+		for (const service of services) {
+			if (!localStorage.getItem(service.key)) {
+				try {
+					const res = await fetch(service.url);
+					if (res.ok) {
+						const creds = await res.json();
+						if (creds && creds.length > 0) {
+							localStorage.setItem(service.key, creds[0].name);
+						}
+					}
+				} catch (e) {
+					console.error(`Error fetching credentials for ${service.key}:`, e);
+				}
+			}
+		}
+	}
 
 	$effect(() => {
 		const theme = themeStore.current;
@@ -36,6 +66,8 @@
 	}
 
 	onMount(() => {
+		fetchDefaultCredentials();
+
 		const handleMessage = (event: MessageEvent) => {
 			if (event.data.type === 'RESIZE_CHAT') {
 				isWide = event.data.isWide;
@@ -50,6 +82,13 @@
 	<div class="chat-window" class:hidden={!isOpen} class:wide={isWide}>
 		<div class="chat-header">
 			<h3>AI Assistant</h3>
+			<button class="resize-btn" onclick={() => (isWide = !isWide)} aria-label="Resize chat">
+				{#if isWide}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/></svg>
+				{:else}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+				{/if}
+			</button>
 		</div>
 
 		{#if !isLoaded}
@@ -113,9 +152,9 @@
 	}
 
 	.chat-window {
-		width: 380px;
-		height: 600px;
-		max-height: 80vh;
+		width: 440px;
+		height: 680px;
+		max-height: 85vh;
 		background: var(--color-bg-card);
 		border: 1px solid var(--color-border);
 		border-radius: 20px;
@@ -137,7 +176,9 @@
 
 	.chat-window.wide {
 		width: 800px;
+		height: 85vh;
 		max-width: 90vw;
+		max-height: 85vh;
 	}
 
 	.chat-header {
@@ -160,6 +201,20 @@
 		font-size: 1.5rem;
 		cursor: pointer;
 		color: var(--color-text-muted);
+	}
+
+	.resize-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 4px;
+		border-radius: 6px;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.resize-btn:hover {
+		background: var(--color-border);
+		color: var(--color-purple);
 	}
 
 	iframe {

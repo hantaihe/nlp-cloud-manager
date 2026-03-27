@@ -21,7 +21,7 @@
 	async function fetchCredentials() {
 		loading = true;
 		try {
-			const res = await fetch('http://localhost:3002/billing/credentials');
+			const res = await fetch('http://localhost:3002/credentials');
 			if (res.ok) {
 				credentials = await res.json();
 				if (!activeName || !credentials.find((c) => c.name === activeName)) {
@@ -44,7 +44,7 @@
 		}
 
 		try {
-			const res = await fetch('http://localhost:3002/billing/credentials', {
+			const res = await fetch('http://localhost:3002/credentials', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(newCred)
@@ -71,7 +71,7 @@
 		if (!confirm(`Delete credential "${name}"?`)) return;
 
 		try {
-			const res = await fetch(`http://localhost:3002/billing/credentials/${name}`, {
+			const res = await fetch(`http://localhost:3002/credentials/${name}`, {
 				method: 'DELETE'
 			});
 			if (res.ok) {

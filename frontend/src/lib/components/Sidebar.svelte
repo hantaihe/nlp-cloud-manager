@@ -66,7 +66,18 @@
 		</div>
 	</nav>
 
-	<div class="sidebar-footer"></div>
+	<div class="sidebar-footer">
+		<a
+			href="/settings"
+			class="menu-item"
+			class:active={$page.url.pathname.startsWith('/settings')}
+		>
+			<span class="menu-icon">⚙</span>
+			{#if !isCollapsed}
+				<span class="menu-label">Settings</span>
+			{/if}
+		</a>
+	</div>
 </aside>
 
 <style>

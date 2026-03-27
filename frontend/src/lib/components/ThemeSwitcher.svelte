@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { themeStore, type Theme } from '$lib/theme.svelte';
 
-	const themes: { id: Theme; label: string; icon: string }[] = [
-		{ id: 'dark', label: 'Dark', icon: '🌙' },
-		{ id: 'light', label: 'Light', icon: '☀️' },
-		{ id: 'ocean', label: 'Ocean', icon: '🌊' },
-		{ id: 'forest', label: 'Forest', icon: '🌲' }
+	const themes: { id: Theme; label: string }[] = [
+		{ id: 'dark', label: 'Dark' },
+		{ id: 'light', label: 'Light' },
+		{ id: 'ocean', label: 'Ocean' },
+		{ id: 'forest', label: 'Forest' }
 	];
 
 	let isOpen = $state(false);
@@ -21,7 +21,7 @@
 
 <div class="theme-switcher">
 	<button class="current-toggle" onclick={toggle} aria-label="Switch theme">
-		<span class="icon">{themes.find((t) => t.id === themeStore.current)?.icon}</span>
+		<span class="label">{themes.find((t) => t.id === themeStore.current)?.label}</span>
 	</button>
 
 	{#if isOpen}
@@ -33,7 +33,6 @@
 					class:active={themeStore.current === theme.id}
 					onclick={() => select(theme.id)}
 				>
-					<span class="opt-icon">{theme.icon}</span>
 					<span class="opt-label">{theme.label}</span>
 					{#if themeStore.current === theme.id}
 						<span class="check">✓</span>
@@ -50,8 +49,8 @@
 	}
 
 	.current-toggle {
-		width: 36px;
 		height: 36px;
+		padding: 0 0.75rem;
 		border-radius: 8px;
 		display: flex;
 		align-items: center;
@@ -59,7 +58,9 @@
 		background: var(--color-bg-tertiary);
 		border: 1px solid var(--color-border);
 		transition: all 0.2s;
-		font-size: 1.2rem;
+		font-size: 0.85rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
 	}
 	.current-toggle:hover {
 		background: var(--color-bg-hover);
@@ -120,9 +121,6 @@
 		font-weight: 600;
 	}
 
-	.opt-icon {
-		font-size: 1.1rem;
-	}
 	.opt-label {
 		flex: 1;
 	}

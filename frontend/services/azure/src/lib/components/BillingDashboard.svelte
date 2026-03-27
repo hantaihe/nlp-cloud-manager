@@ -5,6 +5,7 @@
 	import BudgetsTable from './BudgetsTable.svelte';
 	import FreeTierStatus from './FreeTierStatus.svelte';
 	import CredentialsManager from './CredentialsManager.svelte';
+	import RecommendationsPanel from './RecommendationsPanel.svelte';
 
 	let summaryData: any = $state(null);
 	let loading = $state(true);
@@ -92,6 +93,10 @@
 
 			<div class="column">
 				<FreeTierStatus freeTierUsage={summaryData.topServices || []} />
+			</div>
+
+			<div class="span-all">
+				<RecommendationsPanel name={localStorage.getItem('azure_active_name') || ''} />
 			</div>
 		</div>
 	{/if}

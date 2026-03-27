@@ -6,15 +6,21 @@
 	import BudgetsTable from './BudgetsTable.svelte';
 	import FreeTierStatus from './FreeTierStatus.svelte';
 	import CredentialsManager from './CredentialsManager.svelte';
+	import RecommendationsPanel from './RecommendationsPanel.svelte';
 
 	let summaryData: any = $state(null);
 	let loading = $state(true);
 	let error: string | null = $state(null);
+	function formatDate(date: Date) {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
 	let filters = $state({
-		start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-		end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1)
-			.toISOString()
-			.split('T')[0],
+		start: formatDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
+		end: formatDate(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1)),
 		granularity: 'DAILY' as 'DAILY' | 'MONTHLY' | 'HOURLY',
 		groupBy: [] as string[]
 	});
@@ -48,7 +54,7 @@
 
 			summaryData = {
 				...summary,
-				currentMonthCost: costData.ResultsByTime || costData.currentMonthCost || []
+				filteredCost: costData.ResultsByTime || []
 			};
 		} catch (e: any) {
 			error = e.message;
@@ -95,7 +101,7 @@
 			</div>
 
 			<div class="span-all">
-				<CostBarChart costData={summaryData.currentMonthCost} {loading} />
+				<CostBarChart costData={summaryData.filteredCost} {loading} />
 			</div>
 
 			<div class="column">
@@ -104,6 +110,10 @@
 
 			<div class="column">
 				<FreeTierStatus freeTierUsage={summaryData.freeTierUsage || []} />
+			</div>
+
+			<div class="span-all">
+				<RecommendationsPanel name={localStorage.getItem('aws_active_name') || ''} />
 			</div>
 		</div>
 	{/if}

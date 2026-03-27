@@ -6,7 +6,11 @@
 		master_billing_account?: string;
 	}
 
-	let { accounts = [] }: { accounts: Account[] } = $props();
+	interface Props {
+		accounts: Account[];
+	}
+
+	let { accounts = [] }: Props = $props();
 </script>
 
 <div class="accounts-container glass">

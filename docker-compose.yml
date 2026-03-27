@@ -1,35 +1,194 @@
 services:
-  main-fe:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "5173:3000"
-    environment:
-      - NODE_ENV=production
-    depends_on:
-      - main-be
-
-  main-be:
-    build:
-      context: ./backend/base
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-
-  mysql-db:
+  mysql:
     image: mysql:8.0
+    container_name: nlp-mysql
+    restart: unless-stopped
     ports:
       - "3306:3306"
     environment:
-      - MYSQL_ROOT_PASSWORD=root
-      - MYSQL_DATABASE=nlp_cloud_manager
-      - MYSQL_USER=root
-      - MYSQL_PASSWORD=root
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: nlp_cloud_manager
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - nlp-net
+
+  backend-base:
+    build:
+      context: ./backend/base
+      dockerfile: Dockerfile
+    container_name: nlp-backend-base
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_USERNAME: root
+      DATABASE_PASSWORD: root
+      DATABASE_DATABASE: nlp_cloud_manager
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - nlp-net
+
+  backend-aws:
+    build:
+      context: ./backend/aws
+      dockerfile: Dockerfile
+    container_name: nlp-backend-aws
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_USERNAME: root
+      DATABASE_PASSWORD: root
+      DATABASE_DATABASE: nlp_cloud_manager
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - nlp-net
+
+  backend-azure:
+    build:
+      context: ./backend/azure
+      dockerfile: Dockerfile
+    container_name: nlp-backend-azure
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_USERNAME: root
+      DATABASE_PASSWORD: root
+      DATABASE_DATABASE: nlp_cloud_manager
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - nlp-net
+
+  backend-gcp:
+    build:
+      context: ./backend/gcp
+      dockerfile: Dockerfile
+    container_name: nlp-backend-gcp
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_USERNAME: root
+      DATABASE_PASSWORD: root
+      DATABASE_DATABASE: nlp_cloud_manager
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - nlp-net
+
+  backend-chatbot:
+    build:
+      context: ./backend/chatbot
+      dockerfile: Dockerfile
+    container_name: nlp-backend-chatbot
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_USERNAME: root
+      DATABASE_PASSWORD: root
+      DATABASE_DATABASE: nlp_cloud_manager
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - nlp-net
+
+  frontend-main:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nlp-frontend-main
+    restart: unless-stopped
+    ports:
+      - "5173:3000"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - backend-base
+      - backend-aws
+      - backend-azure
+      - backend-gcp
+    networks:
+      - nlp-net
+
+  frontend-aws:
+    build:
+      context: ./frontend/services/aws
+      dockerfile: Dockerfile
+    container_name: nlp-frontend-aws
+    restart: unless-stopped
+    ports:
+      - "5175:5175"
+    networks:
+      - nlp-net
+
+  frontend-azure:
+    build:
+      context: ./frontend/services/azure
+      dockerfile: Dockerfile
+    container_name: nlp-frontend-azure
+    restart: unless-stopped
+    ports:
+      - "5176:5176"
+    networks:
+      - nlp-net
+
+  frontend-gcp:
+    build:
+      context: ./frontend/services/gcp
+      dockerfile: Dockerfile
+    container_name: nlp-frontend-gcp
+    restart: unless-stopped
+    ports:
+      - "5177:5177"
+    networks:
+      - nlp-net
+
+  frontend-chatbot:
+    build:
+      context: ./frontend/services/chatbot
+      dockerfile: Dockerfile
+    container_name: nlp-frontend-chatbot
+    restart: unless-stopped
+    ports:
+      - "3106:3106"
+    networks:
+      - nlp-net
 
 volumes:
   mysql_data:
+
+
+networks:
+  nlp-net:
+    driver: bridge

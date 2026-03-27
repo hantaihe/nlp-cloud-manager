@@ -2,9 +2,9 @@
 	export let budgets: any[] = [];
 
 	function formatCurrency(amount: string | number) {
-		return new Intl.NumberFormat('en-US', {
+		return new Intl.NumberFormat('ko-KR', {
 			style: 'currency',
-			currency: 'USD'
+			currency: 'KRW'
 		}).format(Number(amount));
 	}
 

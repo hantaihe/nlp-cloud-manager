@@ -7,7 +7,11 @@
 		payload?: string;
 	}
 
-	let { logs = [] }: { logs: LogEntry[] } = $props();
+	interface Props {
+		logs: LogEntry[];
+	}
+
+	let { logs = [] }: Props = $props();
 
 	function formatPayload(payload?: string) {
 		if (!payload) return '';
@@ -31,13 +35,20 @@
 			{#each logs as log}
 				<div class="log-card">
 					<div class="log-header">
-						<span class="severity" class:error={log.severity === 'ERROR'} class:warning={log.severity === 'WARNING'} class:info={log.severity === 'INFO'}>
+						<span
+							class="severity"
+							class:error={log.severity === 'ERROR'}
+							class:warning={log.severity === 'WARNING'}
+							class:info={log.severity === 'INFO'}
+						>
 							{log.severity || 'DEFAULT'}
 						</span>
 						<span class="timestamp">{new Date(log.timestamp || '').toLocaleString()}</span>
 					</div>
 					<div class="log-meta">
-						<span class="log-name" title={log.log_name}>{log.log_name?.split('/').pop() || 'Unknown'}</span>
+						<span class="log-name" title={log.log_name}
+							>{log.log_name?.split('/').pop() || 'Unknown'}</span
+						>
 						<span class="resource-type">{log.resource_type}</span>
 					</div>
 					<div class="log-payload">
@@ -80,15 +91,17 @@
 		transition: all 0.2s;
 	}
 
-	.log-card:hover { border-color: var(--color-accent); }
-	
+	.log-card:hover {
+		border-color: var(--color-accent);
+	}
+
 	.log-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 0.6rem;
 	}
-	
+
 	.severity {
 		padding: 0.2rem 0.5rem;
 		border-radius: 0.4rem;
@@ -97,15 +110,24 @@
 		background: rgba(158, 158, 158, 0.15);
 		color: #9e9e9e;
 	}
-	.severity.info { background: rgba(66, 133, 244, 0.15); color: #4285f4; }
-	.severity.warning { background: rgba(251, 188, 4, 0.15); color: #fbbc04; }
-	.severity.error { background: rgba(234, 67, 53, 0.15); color: #ea4335; }
-	
+	.severity.info {
+		background: rgba(66, 133, 244, 0.15);
+		color: #4285f4;
+	}
+	.severity.warning {
+		background: rgba(251, 188, 4, 0.15);
+		color: #fbbc04;
+	}
+	.severity.error {
+		background: rgba(234, 67, 53, 0.15);
+		color: #ea4335;
+	}
+
 	.timestamp {
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
 	}
-	
+
 	.log-meta {
 		display: flex;
 		gap: 0.8rem;
@@ -124,19 +146,19 @@
 		border-radius: 0.3rem;
 		font-size: 0.7rem;
 	}
-	
+
 	.log-payload {
 		font-family: 'SF Mono', 'Fira Code', monospace;
 		font-size: 0.75rem;
 		color: var(--color-text-primary);
-		background: rgba(0,0,0,0.2);
+		background: rgba(0, 0, 0, 0.2);
 		padding: 0.8rem;
 		border-radius: 0.4rem;
 		overflow-x: auto;
 		white-space: pre-wrap;
 		word-break: break-all;
 	}
-	
+
 	.empty {
 		text-align: center;
 		padding: 2rem;

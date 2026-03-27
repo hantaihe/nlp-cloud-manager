@@ -10,14 +10,24 @@ export class AppController {
     private readonly dashboardLayoutRepository: Repository<DashboardLayout>,
   ) { }
 
+  private async findOrCreate(userId: string): Promise<DashboardLayout> {
+    const existing = await this.dashboardLayoutRepository.findOne({ where: { userId } });
+    if (existing) return existing;
+    const record = new DashboardLayout();
+    record.userId = userId;
+    record.layoutData = '';
+    record.settingsData = null;
+    return record;
+  }
+
   @Get('dashboard/layout')
   async getLayout(@Query('userId') userId: string) {
-    const layout = await this.dashboardLayoutRepository.findOne({
-      where: { userId: userId || 'default' },
-    });
+    const uId = userId || 'default';
+    const layout = await this.dashboardLayoutRepository.findOne({ where: { userId: uId } });
     return {
       data: {
-        layoutData: layout ? layout.layoutData : null,
+        layoutData: layout?.layoutData ?? null,
+        settingsData: layout?.settingsData ?? null,
       },
     };
   }
@@ -28,20 +38,21 @@ export class AppController {
     @Query('userId') userId: string,
   ) {
     const uId = userId || 'default';
-    let layout = await this.dashboardLayoutRepository.findOne({
-      where: { userId: uId },
-    });
+    const record = await this.findOrCreate(uId);
+    record.layoutData = body.layoutData;
+    await this.dashboardLayoutRepository.save(record);
+    return { success: true };
+  }
 
-    if (layout) {
-      layout.layoutData = body.layoutData;
-    } else {
-      layout = this.dashboardLayoutRepository.create({
-        userId: uId,
-        layoutData: body.layoutData,
-      });
-    }
-
-    await this.dashboardLayoutRepository.save(layout);
+  @Post('dashboard/settings')
+  async saveSettings(
+    @Body() body: { settingsData: string },
+    @Query('userId') userId: string,
+  ) {
+    const uId = userId || 'default';
+    const record = await this.findOrCreate(uId);
+    record.settingsData = body.settingsData;
+    await this.dashboardLayoutRepository.save(record);
     return { success: true };
   }
 }

@@ -8,9 +8,20 @@
 		}).format(Number(amount));
 	}
 
+	function getInclusiveEndDate(exclusiveEnd: string): string {
+		if (!exclusiveEnd) return '';
+		const d = new Date(exclusiveEnd);
+		d.setDate(d.getDate() - 1);
+		
+		const year = d.getUTCFullYear();
+		const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+		const day = String(d.getUTCDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
 	$: currentItem = costData?.[0];
 	$: startDate = currentItem?.TimePeriod?.Start || '';
-	$: endDate = currentItem?.TimePeriod?.End || '';
+	$: endDate = getInclusiveEndDate(currentItem?.TimePeriod?.End || '');
 
 	$: groups = (currentItem?.Groups || [])
 		.map((g: any) => ({

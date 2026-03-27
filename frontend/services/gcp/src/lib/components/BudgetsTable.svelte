@@ -7,13 +7,19 @@
 				units: number;
 				currency_code: string;
 			};
+			last_period_amount?: any;
 		};
 		threshold_rules?: Array<{
 			threshold_percent: number;
+			spend_basis?: string;
 		}>;
 	}
 
-	let { budgets = [] }: { budgets: Budget[] } = $props();
+	interface Props {
+		budgets: Budget[];
+	}
+
+	let { budgets = [] }: Props = $props();
 
 	function formatCurrency(amount: any) {
 		const units = Number(amount?.units || 0);
@@ -48,7 +54,7 @@
 							{#if budget.amount?.specified_amount}
 								{formatCurrency(budget.amount.specified_amount)}
 							{:else if budget.amount?.last_period_amount}
-								<span class="badge">Last Period</span>
+								<span class="badge">지난 기간</span>
 							{:else}
 								-
 							{/if}

@@ -12,7 +12,11 @@
 		points?: MetricPoint[];
 	}
 
-	let { metrics = [] }: { metrics: TimeSeries[] } = $props();
+	interface Props {
+		metrics: TimeSeries[];
+	}
+
+	let { metrics = [] }: Props = $props();
 </script>
 
 <div class="monitoring-container glass">

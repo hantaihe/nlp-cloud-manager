@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import {
     CostExplorerClient,
     GetCostAndUsageCommand,
+    GetCostForecastCommand,
 } from '@aws-sdk/client-cost-explorer';
 import { BudgetsClient, DescribeBudgetsCommand } from '@aws-sdk/client-budgets';
 import { FreeTierClient, GetFreeTierUsageCommand } from '@aws-sdk/client-freetier';
@@ -14,65 +15,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In } from 'typeorm';
 import { Credential } from './entities/credential.entity';
 import { DailyCost } from './entities/daily-cost.entity';
-
-export class AWSCredentials {
-    name: string;
-    accessKeyId: string;
-    secretAccessKey: string;
-    sessionToken?: string;
-    region: string;
-    accountId?: string;
-}
+import { CredentialsService, AWSCredentials } from '../credentials/credentials.service';
 
 @Injectable()
 export class BillingService {
     private readonly logger = new Logger(BillingService.name);
 
     constructor(
-        @InjectRepository(Credential)
-        private credentialRepository: Repository<Credential>,
         @InjectRepository(DailyCost)
         private dailyCostRepository: Repository<DailyCost>,
+        private credentialsService: CredentialsService,
     ) { }
 
-    async saveCredentials(creds: AWSCredentials) {
-        let credential = await this.credentialRepository.findOne({ where: { name: creds.name } });
-        if (!credential) {
-            credential = new Credential();
-            credential.name = creds.name;
-        }
-        if (creds.accessKeyId) credential.accessKeyId = creds.accessKeyId;
-        if (creds.secretAccessKey) credential.secretAccessKey = creds.secretAccessKey;
-        credential.sessionToken = creds.sessionToken;
-        if (creds.region) credential.region = creds.region;
-        credential.accountId = creds.accountId;
-        return this.credentialRepository.save(credential);
-    }
-
-    async getStoredCredentials(name?: string): Promise<AWSCredentials | null> {
-        const query = name ? { name } : {};
-        const credential = await this.credentialRepository.findOne({ where: query });
-        if (!credential) return null;
-        return {
-            name: credential.name,
-            accessKeyId: credential.accessKeyId,
-            secretAccessKey: credential.secretAccessKey,
-            sessionToken: credential.sessionToken ?? undefined,
-            region: credential.region,
-            accountId: credential.accountId ?? undefined,
-        };
-    }
-
-    async listCredentials() {
-        return this.credentialRepository.find();
-    }
-
-    async deleteCredentials(name: string) {
-        return this.credentialRepository.delete({ name });
-    }
-
     private async getClients(creds?: AWSCredentials) {
-        const targetCreds = creds || await this.getStoredCredentials();
+        const targetCreds = creds || await this.credentialsService.getStoredCredentials();
         if (!targetCreds) {
             throw new BadRequestException('Credentials not found');
         }
@@ -140,14 +96,14 @@ export class BillingService {
         groupBy?: { Type: 'DIMENSION' | 'TAG'; Key: string }[];
         filter?: any;
     }) {
-        const targetCreds = creds || await this.getStoredCredentials();
+        const targetCreds = creds || await this.credentialsService.getStoredCredentials();
         if (!targetCreds) {
             throw new BadRequestException('Credentials not found');
         }
 
         const now = new Date();
-        const start = params.start || new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-        const end = params.end || new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString().split('T')[0];
+        const start = params.start || this.formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
+        const end = params.end || this.formatDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
 
         const groupByStr = params.groupBy
             ? params.groupBy
@@ -159,7 +115,7 @@ export class BillingService {
         if ((params.granularity === 'DAILY' || !params.granularity) && !params.filter) {
             const cachedData = await this.dailyCostRepository.find({
                 where: {
-                    credentialName: targetCreds.name,
+                    credentialId: targetCreds.id,
                     date: Between(start, end),
                 },
                 order: { date: 'ASC' },
@@ -171,14 +127,14 @@ export class BillingService {
 
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toISOString().split('T')[0];
+            const yesterdayStr = this.formatDate(yesterday);
 
             const hasAllData = cachedData.length >= diffDays;
             const hasGroupingData = !groupByStr || cachedData.every(d => d.groupedData && d.groupedData[groupByStr]);
             const hasRecentEstimated = cachedData.some(d => d.estimated && d.date >= yesterdayStr);
 
             if (hasAllData && hasGroupingData && !hasRecentEstimated) {
-                this.logger.log(`${groupByStr ? 'grouped ' : ''} 캐싱 ${targetCreds.name}`);
+                this.logger.log(`${groupByStr ? 'grouped ' : ''} 캐싱 [${targetCreds.id}] ${targetCreds.name}`);
                 return {
                     ResultsByTime: cachedData.map(d => ({
                         TimePeriod: { Start: d.date, End: this.getNextDay(d.date) },
@@ -207,7 +163,7 @@ export class BillingService {
             const response = await ceClient.send(command);
 
             if ((params.granularity === 'DAILY' || !params.granularity) && !params.filter && response.ResultsByTime) {
-                await this.saveDailyCostsToDb(targetCreds.name, response.ResultsByTime, params.groupBy);
+                await this.saveDailyCostsToDb(targetCreds.id, response.ResultsByTime, params.groupBy);
             }
 
             return response;
@@ -216,14 +172,13 @@ export class BillingService {
             throw error;
         }
     }
-
     private getNextDay(dateStr: string): string {
         const date = new Date(dateStr);
         date.setDate(date.getDate() + 1);
-        return date.toISOString().split('T')[0];
+        return this.formatDate(date);
     }
 
-    private async saveDailyCostsToDb(credentialName: string, results: any[], groupBy?: { Type: string; Key: string }[]) {
+    private async saveDailyCostsToDb(credentialId: string, results: any[], groupBy?: { Type: string; Key: string }[]) {
         const groupByStr = groupBy
             ? groupBy
                 .map((g) => `${g.Type}:${g.Key}`)
@@ -239,12 +194,12 @@ export class BillingService {
             const groups = result.Groups || [];
 
             let dailyCost = await this.dailyCostRepository.findOne({
-                where: { credentialName, date },
+                where: { credentialId, date },
             });
 
             if (!dailyCost) {
                 dailyCost = new DailyCost();
-                dailyCost.credentialName = credentialName;
+                dailyCost.credentialId = credentialId;
                 dailyCost.date = date;
                 dailyCost.groupedData = {};
             }
@@ -261,6 +216,13 @@ export class BillingService {
 
             await this.dailyCostRepository.save(dailyCost);
         }
+    }
+
+    private formatDate(date: Date): string {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
     async getCurrentMonthCost(creds?: AWSCredentials) {
@@ -324,17 +286,50 @@ export class BillingService {
         };
     }
 
-    async getDashboardStats(creds?: AWSCredentials) {
-        const { ceClient, budgetsClient, creds: targetCreds } = await this.getClients(creds);
+    async getDashboardStats(creds?: AWSCredentials, start?: string, end?: string, granularity: 'DAILY' | 'MONTHLY' = 'MONTHLY') {
+        let ceClient: CostExplorerClient;
+        let budgetsClient: BudgetsClient;
+        let targetCreds: AWSCredentials;
+
+        try {
+            const clients = await this.getClients(creds);
+            ceClient = clients.ceClient;
+            budgetsClient = clients.budgetsClient;
+            targetCreds = clients.creds;
+        } catch (error) {
+            if (error instanceof BadRequestException && error.message === 'Credentials not found') {
+                return {
+                    totalCost: 0,
+                    costTrend: 0,
+                    topServices: [],
+                    monthlyData: [],
+                    dailyData: [],
+                    activeResources: 0,
+                    budgetUsed: 0,
+                    alerts: 0,
+                    error: 'Credentials not found'
+                };
+            }
+            throw error;
+        }
+
         const now = new Date();
+        const currentMonthStart = start || this.formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
 
-        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-        const currentMonthEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString().split('T')[0];
+        let currentMonthEnd = end;
+        if (!currentMonthEnd) {
+            currentMonthEnd = this.formatDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+        } else {
+            const endDate = new Date(currentMonthEnd);
+            endDate.setDate(endDate.getDate() + 1);
+            currentMonthEnd = this.formatDate(endDate);
+        }
 
-        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
-        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const startDateObj = new Date(currentMonthStart);
+        const lastMonthStart = this.formatDate(new Date(startDateObj.getFullYear(), startDateObj.getMonth() - 1, 1));
+        const lastMonthEnd = this.formatDate(new Date(startDateObj.getFullYear(), startDateObj.getMonth(), 1));
 
-        const sevenMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1).toISOString().split('T')[0];
+        const sevenMonthsAgo = this.formatDate(new Date(startDateObj.getFullYear(), startDateObj.getMonth() - 6, 1));
 
         const [currentCost, lastCost, monthlyCosts, serviceCosts, budgets] = await Promise.allSettled([
             ceClient.send(new GetCostAndUsageCommand({
@@ -349,7 +344,7 @@ export class BillingService {
             })),
             ceClient.send(new GetCostAndUsageCommand({
                 TimePeriod: { Start: sevenMonthsAgo, End: currentMonthEnd },
-                Granularity: 'MONTHLY',
+                Granularity: granularity,
                 Metrics: ['UnblendedCost'],
             })),
             ceClient.send(new GetCostAndUsageCommand({
@@ -378,13 +373,21 @@ export class BillingService {
 
         const months = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
         const monthlyData: { month: string; cost: number }[] = [];
+        const dailyData: { day: string; cost: number }[] = [];
         if (monthlyCosts.status === 'fulfilled' && monthlyCosts.value.ResultsByTime) {
             for (const period of monthlyCosts.value.ResultsByTime) {
                 const startDate = new Date(period.TimePeriod?.Start || '');
-                monthlyData.push({
-                    month: months[startDate.getMonth()],
-                    cost: Math.round(parseFloat(period.Total?.UnblendedCost?.Amount || '0')),
-                });
+                if (granularity === 'DAILY') {
+                    dailyData.push({
+                        day: `${startDate.getMonth() + 1}/${startDate.getDate()}`,
+                        cost: Math.round(parseFloat(period.Total?.UnblendedCost?.Amount || '0'))
+                    });
+                } else {
+                    monthlyData.push({
+                        month: months[startDate.getMonth()],
+                        cost: Math.round(parseFloat(period.Total?.UnblendedCost?.Amount || '0'))
+                    });
+                }
             }
         }
 
@@ -420,7 +423,7 @@ export class BillingService {
                     recentAlerts.push({
                         message: `예산 초과: ${b.BudgetName} 예산의 ${Math.round((bActual / bLimit) * 100)}% 사용`,
                         severity: bActual > bLimit ? 'error' : 'warning',
-                        date: new Date().toISOString().split('T')[0]
+                        date: this.formatDate(new Date())
                     });
                 }
             }
@@ -444,11 +447,45 @@ export class BillingService {
             status: 'Active'
         }));
 
+        let forecastedCost = 0;
+        try {
+            const today = new Date();
+            const thisMonthStart = this.formatDate(new Date(today.getFullYear(), today.getMonth(), 1));
+            const tomorrow = this.formatDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1));
+            const nextMonthFirst = this.formatDate(new Date(today.getFullYear(), today.getMonth() + 1, 1));
+
+            let actualThisMonth = 0;
+            const actualResult = await ceClient.send(new GetCostAndUsageCommand({
+                TimePeriod: { Start: thisMonthStart, End: tomorrow },
+                Granularity: 'MONTHLY',
+                Metrics: ['UnblendedCost'],
+            }));
+            if (actualResult.ResultsByTime?.length) {
+                actualThisMonth = parseFloat(actualResult.ResultsByTime[0].Total?.UnblendedCost?.Amount || '0');
+            }
+
+            let remainingForecast = 0;
+            if (tomorrow < nextMonthFirst) {
+                const forecastResult = await ceClient.send(new GetCostForecastCommand({
+                    TimePeriod: { Start: tomorrow, End: nextMonthFirst },
+                    Metric: 'UNBLENDED_COST',
+                    Granularity: 'MONTHLY',
+                }));
+                remainingForecast = parseFloat(forecastResult.Total?.Amount || '0');
+            }
+
+            forecastedCost = Math.round(actualThisMonth + remainingForecast);
+        } catch (e) {
+            this.logger.warn(`GetCostForecast failed: ${e}`);
+        }
+
         return {
             totalCost: Math.round(totalCost),
+            forecastedCost,
             costTrend,
             topServices,
             monthlyData,
+            dailyData,
             activeResources: topServices.length,
             budgetUsed,
             alerts: alertsCount,

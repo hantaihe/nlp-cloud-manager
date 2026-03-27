@@ -1,13 +1,18 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
+import { Credential } from './credential.entity';
 
 @Entity('aws_daily_costs')
-@Index(['credentialName', 'date'], { unique: true })
+@Index(['credential', 'date'], { unique: true })
 export class DailyCost {
     @PrimaryGeneratedColumn()
     id: number;
 
+    @ManyToOne(() => Credential, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'credentialId' })
+    credential: Credential;
+
     @Column()
-    credentialName: string;
+    credentialId: string;
 
     @Column()
     date: string;

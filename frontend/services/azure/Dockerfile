@@ -10,17 +10,16 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN pnpm run build
+RUN pnpm build
 
 FROM node:24-alpine
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@latest --activate
 
-RUN pnpm add -g serve
+RUN npm install -g serve
 
 COPY --from=builder /app/dist ./dist
 
-EXPOSE 5174
+EXPOSE 5176
 
-CMD ["serve", "-s", "dist", "-l", "5174"]
+CMD ["serve", "-s", "dist", "-l", "5176"]

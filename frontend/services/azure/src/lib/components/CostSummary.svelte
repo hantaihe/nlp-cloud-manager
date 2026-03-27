@@ -3,9 +3,9 @@
 	export let totalCost: number = 0;
 
 	function formatCurrency(amount: string | number) {
-		return new Intl.NumberFormat('en-US', {
+		return new Intl.NumberFormat('ko-KR', {
 			style: 'currency',
-			currency: 'USD'
+			currency: 'KRW'
 		}).format(Number(amount));
 	}
 

@@ -11,6 +11,7 @@
 	import GovernancePanel from './GovernancePanel.svelte';
 	import MonitoringPanel from './MonitoringPanel.svelte';
 	import LoggingPanel from './LoggingPanel.svelte';
+	import RecommendationsPanel from './RecommendationsPanel.svelte';
 
 	const API_BASE = 'http://localhost:8002';
 
@@ -22,6 +23,7 @@
 	let assets: any[] = $state([]);
 	let services: any[] = $state([]);
 	let summary: any = $state({});
+	let recommendations: any[] = $state([]);
 
 	let filters = $state({
 		billingAccountId: '' as string,
@@ -64,6 +66,9 @@
 					break;
 				case 'logging':
 					await fetchLoggingData(name);
+					break;
+			case 'recommendations':
+					await fetchRecommendationsData(name);
 					break;
 			}
 		} catch (e: any) {
@@ -164,6 +169,16 @@
 		services = data.entries || [];
 	}
 
+	async function fetchRecommendationsData(name: string) {
+		const res = await fetch(`${API_BASE}/recommendations?name=${name}`);
+		if (!res.ok) {
+			const errorData = await res.json();
+			throw new Error(errorData.detail || 'Failed to fetch recommendations');
+		}
+		const data = await res.json();
+		recommendations = data.recommendations || [];
+	}
+
 	function handleApplyFilters(newFilters: any) {
 		filters = { ...newFilters };
 		fetchData();
@@ -213,19 +228,23 @@
 				</div>
 			{:else if filters.activeTab === 'governance'}
 				<div class="span-all">
-					<GovernancePanel constraints={services as any} />
+					<GovernancePanel constraints={services} />
 				</div>
 			{:else if filters.activeTab === 'quotas'}
 				<div class="span-all">
-					<QuotasPanel quotas={services as any} />
+					<QuotasPanel quotas={services} />
 				</div>
 			{:else if filters.activeTab === 'monitoring'}
 				<div class="span-all">
-					<MonitoringPanel metrics={services as any} />
+					<MonitoringPanel metrics={services} />
 				</div>
 			{:else if filters.activeTab === 'logging'}
 				<div class="span-all">
-					<LoggingPanel logs={services as any} />
+					<LoggingPanel logs={services} />
+				</div>
+			{:else if filters.activeTab === 'recommendations'}
+				<div class="span-all">
+					<RecommendationsPanel {recommendations} />
 				</div>
 			{/if}
 		</div>

@@ -7,4 +7,7 @@ export class DashboardLayout {
 
     @Column({ type: 'text' })
     layoutData: string;
+
+    @Column({ type: 'text', nullable: true })
+    settingsData: string | null;
 }

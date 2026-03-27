@@ -5,7 +5,11 @@
 		update_time?: string;
 	}
 
-	let { assets = [] }: { assets: Asset[] } = $props();
+	interface Props {
+		assets: Asset[];
+	}
+
+	let { assets = [] }: Props = $props();
 
 	function getShortType(type?: string) {
 		const parts = type?.split('/') || [];

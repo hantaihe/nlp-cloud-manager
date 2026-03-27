@@ -35,7 +35,8 @@
 		{ id: 'quotas', label: 'Quotas' },
 		{ id: 'governance', label: 'Governance' },
 		{ id: 'monitoring', label: 'Monitoring' },
-		{ id: 'logging', label: 'Logging' }
+		{ id: 'logging', label: 'Logging' },
+		{ id: 'recommendations', label: 'Recommendations' }
 	];
 
 	function handleApply() {

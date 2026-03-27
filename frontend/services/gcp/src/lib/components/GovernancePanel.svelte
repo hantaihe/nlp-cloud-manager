@@ -6,7 +6,11 @@
 		constraint_default?: string;
 	}
 
-	let { constraints = [] }: { constraints: Constraint[] } = $props();
+	interface Props {
+		constraints: Constraint[];
+	}
+
+	let { constraints = [] }: Props = $props();
 </script>
 
 <div class="gov-container glass">
@@ -18,9 +22,15 @@
 			{#each constraints as constraint}
 				<div class="gov-card">
 					<div class="gov-header">
-						<span class="gov-title" title={constraint.display_name}>{constraint.display_name || constraint.name || 'Unknown Constraint'}</span>
+						<span class="gov-title" title={constraint.display_name}
+							>{constraint.display_name || constraint.name || 'Unknown Constraint'}</span
+						>
 						{#if constraint.constraint_default}
-							<span class="badge" class:allow={constraint.constraint_default === 'ALLOW'} class:deny={constraint.constraint_default === 'DENY'}>
+							<span
+								class="badge"
+								class:allow={constraint.constraint_default === 'ALLOW'}
+								class:deny={constraint.constraint_default === 'DENY'}
+							>
 								{constraint.constraint_default}
 							</span>
 						{/if}

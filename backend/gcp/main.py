@@ -4,11 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 import json
 import time
+import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from google.api_core.exceptions import PermissionDenied, Forbidden
 from google.oauth2 import service_account
+import google.auth.transport.requests
 from google.cloud import billing_v1
 from google.cloud.billing import budgets_v1
 from google.cloud import bigquery
@@ -21,10 +24,11 @@ from google.cloud import asset_v1
 from google.cloud import cloudquotas_v1
 from google.cloud import orgpolicy_v2
 from google.cloud import service_usage_v1
+from google.cloud import recommender_v1
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from database import engine, Base, get_db
-from models import GCPCredential
+from models import GCPCredential, GCPDailyCost
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HTTP")
@@ -105,12 +109,14 @@ async def log_requests(request: Request, call_next):
 class CredentialCreate(BaseModel):
     name: str
     project_id: str
+    billing_account_id: Optional[str] = None
     service_account_json: str
 
 class CredentialResponse(BaseModel):
-    id: int
+    id: str
     name: str
     project_id: str
+    billing_account_id: Optional[str] = None
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -150,6 +156,33 @@ def _get_credentials_obj(credential: GCPCredential, scopes: Optional[List[str]] 
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
 
+def _resolve_billing_table(client: bigquery.Client, project_id: str, dataset: str, table: str, billing_account_id: Optional[str] = None) -> str:
+    table_id = f"{project_id}.{dataset}.{table}"
+    try:
+        client.get_table(table_id)
+        return table
+    except Exception:
+        pass
+
+    if table == "gcp_billing_export_v1" and billing_account_id:
+        suffix = billing_account_id.replace("-", "_")
+        alt_table = f"gcp_billing_export_v1_{suffix}"
+        try:
+            client.get_table(f"{project_id}.{dataset}.{alt_table}")
+            return alt_table
+        except Exception:
+            pass
+
+    try:
+        tables = client.list_tables(f"{project_id}.{dataset}")
+        for t in tables:
+            if t.table_id.startswith("gcp_billing_export_v1_"):
+                return t.table_id
+    except Exception:
+        pass
+
+    return table
+
 @app.get("/")
 async def root():
     return {"message": "GCP Cost & Billing API is running"}
@@ -168,6 +201,21 @@ async def create_credential(cred: CredentialCreate, db: AsyncSession = Depends(g
 async def list_credentials(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(GCPCredential))
     return result.scalars().all()
+
+
+@app.patch("/credentials/{name}", response_model=CredentialResponse)
+async def update_credential(name: str, data: dict, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(GCPCredential).where(GCPCredential.name == name))
+    db_cred = result.scalars().first()
+    if not db_cred:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    allowed = {"billing_account_id", "project_id", "service_account_json"}
+    for key, value in data.items():
+        if key in allowed:
+            setattr(db_cred, key, value)
+    await db.commit()
+    await db.refresh(db_cred)
+    return db_cred
 
 
 @app.delete("/credentials/{name}")
@@ -189,13 +237,23 @@ async def list_billing_accounts(name: Optional[str] = None, db: AsyncSession = D
         client = billing_v1.CloudBillingClient(credentials=creds)
 
         accounts = []
-        for account in log_gcp_call("CloudBilling", "list_billing_accounts", client.list_billing_accounts):
-            accounts.append({
-                "name": account.name,
-                "display_name": account.display_name,
-                "open": account.open_,
-                "master_billing_account": account.master_billing_account,
-            })
+        try:
+            for account in log_gcp_call("CloudBilling", "list_billing_accounts", client.list_billing_accounts):
+                accounts.append({
+                    "name": account.name,
+                    "display_name": account.display_name,
+                    "open": account.open_,
+                    "master_billing_account": account.master_billing_account,
+                })
+        except (PermissionDenied, Forbidden):
+            logger.warning("list_billing_accounts 권한 없음")
+            return {
+                "status": "permission_denied",
+                "billing_accounts": [],
+                "warning": "계정에 billing.accounts.list 권한이 없습니다. 저장된 Billing Account ID를 사용합니다.",
+                "saved_billing_account_id": credential.billing_account_id,
+            }
+
         return {"status": "success", "billing_accounts": accounts}
     except HTTPException:
         raise
@@ -252,15 +310,90 @@ async def get_billing_summary(
             request = budgets_v1.ListBudgetsRequest(parent=f"billingAccounts/{billing_account_id}")
             for budget in log_gcp_call("BudgetService", "list_budgets", budget_client.list_budgets, request=request):
                 if budget.amount.specified_amount:
-                    total_budget += budget.amount.specified_amount.units
+                    amount = budget.amount.specified_amount.units + (budget.amount.specified_amount.nanos / 1e9)
+                    total_budget += amount
                     currency_code = budget.amount.specified_amount.currency_code
+        elif accounts:
+             active_acc = next((a for a in accounts if a.open_), None)
+             if active_acc:
+                 billing_account_id = active_acc.name.split("/")[-1]
+                 budget_client = budgets_v1.BudgetServiceClient(credentials=creds)
+                 request = budgets_v1.ListBudgetsRequest(parent=active_acc.name)
+                 for budget in log_gcp_call("BudgetService", "list_budgets", budget_client.list_budgets, request=request):
+                     if budget.amount.specified_amount:
+                         amount = budget.amount.specified_amount.units + (budget.amount.specified_amount.nanos / 1e9)
+                         total_budget += amount
+                         currency_code = budget.amount.specified_amount.currency_code
         
+        total_cost = 0.0
+        bq_error = None
+        try:
+            bq_client = bigquery.Client(credentials=creds, project=credential.project_id)
+            dataset_name = "billing_export"
+            base_table = "gcp_billing_export_v1"
+            resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset_name, base_table, billing_account_id)
+            
+            start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+            
+            query = f"""
+                SELECT 
+                    IFNULL(SUM(cost), 0) + IFNULL(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) AS c)), 0) AS total_cost,
+                    ANY_VALUE(currency) as currency
+                FROM `{credential.project_id}.{dataset_name}.{resolved_table}`
+                WHERE usage_start_time >= TIMESTAMP('{start_date}')
+            """
+            query_job = bq_client.query(query)
+            for row in query_job:
+                total_cost = float(row["total_cost"])
+                if row["currency"]:
+                    currency_code = row["currency"]
+        except Exception as e:
+            bq_error = str(e)
+            logger.warning(f"BigQuery not available: {e}")
+            try:
+                scoped_creds = creds.with_scopes([
+                    "https://www.googleapis.com/auth/cloud-billing.readonly",
+                    "https://www.googleapis.com/auth/cloud-platform.read-only",
+                ])
+                scoped_creds.refresh(google.auth.transport.requests.Request())
+                token = scoped_creds.token
+
+                if billing_account_id:
+                    import urllib.request as _urllib_req
+                    now = datetime.now()
+                    year = now.year
+                    month = now.month
+                    url = (
+                        f"https://cloudbilling.googleapis.com/v1/billingAccounts/"
+                        f"{billing_account_id}/invoices"
+                        f"?filter=invoice_month%3D{year:04d}{month:02d}"
+                    )
+                    req = _urllib_req.Request(url, headers={"Authorization": f"Bearer {token}"})
+                    try:
+                        with _urllib_req.urlopen(req) as resp:
+                            data = json.loads(resp.read())
+                            invoices = data.get("invoices", [])
+                            for invoice in invoices:
+                                for subtotal in invoice.get("subtotals", []):
+                                    total_cost += float(subtotal.get("units", 0) or 0) + (int(subtotal.get("nanos", 0) or 0) / 1e9)
+                                    if subtotal.get("currencyCode"):
+                                        currency_code = subtotal["currencyCode"]
+                            logger.info(f"Cloud Billing invoices API: fetched total_cost={total_cost} {currency_code}")
+                    except Exception as http_e:
+                        logger.warning(f"Invoices API 권한 없음: {http_e}")
+            except Exception as rest_e:
+                logger.warning(f"Cloud Billing REST API fallback failed: {rest_e}")
+                logger.error(
+                    "BigQuery billing export is not configured."
+                )
+
         return {
             "status": "success",
             "summary": {
                 "account_count": len(accounts),
                 "active_accounts": len([a for a in accounts if a.open_]),
                 "total_budget": total_budget,
+                "total_cost": round(total_cost, 2),
                 "currency_code": currency_code,
                 "start_date": datetime.now().replace(day=1).strftime("%Y-%m-%d"),
                 "end_date": datetime.now().strftime("%Y-%m-%d")
@@ -278,7 +411,6 @@ async def list_budgets(
     name: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """예산 목록 조회"""
     try:
         credential = await _get_credential(db, name)
         creds = _get_credentials_obj(credential)
@@ -296,6 +428,8 @@ async def list_budgets(
                     "specified_amount": {
                         "currency_code": budget.amount.specified_amount.currency_code,
                         "units": budget.amount.specified_amount.units,
+                        "nanos": budget.amount.specified_amount.nanos,
+                        "total": budget.amount.specified_amount.units + (budget.amount.specified_amount.nanos / 1e9),
                     } if budget.amount.specified_amount else None,
                     "last_period_amount": bool(budget.amount.last_period_amount),
                 },
@@ -659,6 +793,46 @@ async def search_assets(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/recommendations")
+async def get_gcp_recommendations(name: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    try:
+        credential = await _get_credential(db, name)
+        creds = _get_credentials_obj(credential)
+        client = recommender_v1.RecommenderClient(credentials=creds)
+
+        recommenders = [
+            ("Compute Engine", "google.compute.instance.IdleResourceRecommender", "global"),
+            ("Compute Engine", "google.compute.instance.MachineTypeRecommender", "us-central1-a"),
+            ("Cloud Storage", "google.compute.disk.IdleResourceRecommender", "us-central1-a"),
+            ("Billing", "google.cloudbilling.billingaccount.CostInsightsRecommender", "global"),
+        ]
+        
+        recommendations = []
+        for service, rec_type, location in recommenders:
+            try:
+                parent = f"projects/{credential.project_id}/locations/{location}/recommenders/{rec_type}"
+                for rec in client.list_recommendations(parent=parent):
+                    impact_amount = 0
+                    if rec.primary_impact and rec.primary_impact.cost_projection:
+                        cost = rec.primary_impact.cost_projection.cost
+                        impact_amount = cost.units + (cost.nanos / 1e9)
+                    
+                    recommendations.append({
+                        "name": rec.name,
+                        "service": service,
+                        "description": rec.description,
+                        "impact": impact_amount,
+                        "category": rec.recommender_subtype,
+                        "last_refresh_time": str(rec.last_refresh_time)
+                    })
+            except Exception as e:
+                logger.warning(f"recommendations failed {rec_type} / {location}: {e}")
+
+        return {"status": "success", "recommendations": recommendations}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/quotas")
 async def list_quotas(
     service: str = "compute.googleapis.com",
@@ -852,6 +1026,9 @@ async def disable_service(
 @app.get("/dashboard/stats")
 async def get_dashboard_stats(
     billing_account_id: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    granularity: str = "MONTHLY",
     dataset: str = "billing_export",
     table: str = "gcp_billing_export_v1",
     name: Optional[str] = None,
@@ -860,68 +1037,217 @@ async def get_dashboard_stats(
     try:
         credential = await _get_credential(db, name)
         creds_obj = _get_credentials_obj(credential)
+        if not billing_account_id:
+            billing_account_id = credential.billing_account_id
 
         from datetime import timedelta
         now = datetime.now()
-        current_month_start = now.replace(day=1).strftime("%Y-%m-%d")
-        current_month_end = now.strftime("%Y-%m-%d")
+        
+        try:
+            if start:
+                dt_start = datetime.strptime(start, "%Y-%m-%d")
+            else:
+                dt_start = now.replace(day=1)
+                
+            if end:
+                dt_end = datetime.strptime(end, "%Y-%m-%d")
+            else:
+                dt_end = now
+        except ValueError:
+            dt_start = now.replace(day=1)
+            dt_end = now
 
-        last_month_end = (now.replace(day=1) - timedelta(days=1))
+        current_month_start = dt_start.strftime("%Y-%m-%d")
+        current_month_end = dt_end.strftime("%Y-%m-%d")
+
+        last_month_end = (dt_start - timedelta(days=1))
         last_month_start = last_month_end.replace(day=1).strftime("%Y-%m-%d")
         last_month_end_str = last_month_end.strftime("%Y-%m-%d")
 
-        seven_months_ago = now.replace(day=1)
+        seven_months_ago = dt_start.replace(day=1)
         for _ in range(6):
             seven_months_ago = (seven_months_ago - timedelta(days=1)).replace(day=1)
+        
+        if granularity.upper() == "DAILY":
+            seven_months_ago = dt_start - timedelta(days=30)
+            
         seven_months_start = seven_months_ago.strftime("%Y-%m-%d")
 
         total_cost = 0
         top_services = []
         cost_trend = 0
         monthly_data = []
+        daily_data = []
         budget_used = 0
         alerts = 0
         active_resources = 0
+
+        GCP_GROUP_BY_KEY = "service.description"
+        cost_cache_hit = False
 
         try:
             bq_client = bigquery.Client(
                 credentials=creds_obj, project=credential.project_id
             )
 
-            current_cost_query = f"""
-                SELECT
-                    IFNULL(SUM(cost), 0) AS total_cost
-                FROM `{credential.project_id}.{dataset}.{table}`
-                WHERE usage_start_time >= '{current_month_start}'
-                  AND usage_start_time < '{current_month_end}T23:59:59'
-            """
-            current_result = log_gcp_call("BigQuery", "query", bq_client.query, current_cost_query)
-            for row in current_result:
-                total_cost = float(row["total_cost"])
+            if granularity.upper() == "DAILY":
+                cached_result = await db.execute(
+                    select(GCPDailyCost)
+                    .where(GCPDailyCost.credential_id == credential.id)
+                    .where(GCPDailyCost.date >= seven_months_start)
+                    .where(GCPDailyCost.date <= current_month_end)
+                    .order_by(GCPDailyCost.date)
+                )
+                cached_rows = cached_result.scalars().all()
 
-            service_query = f"""
-                SELECT
-                    service.description AS service_name,
-                    ROUND(SUM(cost), 2) AS service_cost
-                FROM `{credential.project_id}.{dataset}.{table}`
-                WHERE usage_start_time >= '{current_month_start}'
-                  AND usage_start_time < '{current_month_end}T23:59:59'
-                GROUP BY service.description
-                HAVING service_cost > 0
-                ORDER BY service_cost DESC
-                LIMIT 5
-            """
-            service_result = log_gcp_call("BigQuery", "query", bq_client.query, service_query)
-            for row in service_result:
-                top_services.append({
-                    "name": row["service_name"],
-                    "cost": round(float(row["service_cost"]))
-                })
+                expected_days = (dt_end.date() - seven_months_ago.date()).days
+                hasAllData = len(cached_rows) >= expected_days
+                hasGroupingData = bool(cached_rows) and all(
+                    r.grouped_data and GCP_GROUP_BY_KEY in r.grouped_data
+                    for r in cached_rows
+                )
 
+                if hasAllData and hasGroupingData:
+                    logger.info(f"Cache HIT: GCP daily {credential.name}")
+                    cost_cache_hit = True
+                    svc_agg = {}
+                    for r in cached_rows:
+                        dt_row = datetime.strptime(r.date, "%Y-%m-%d")
+                        daily_data.append({"day": dt_row.strftime("%m/%d"), "cost": round(r.amount)})
+                        if r.date >= current_month_start:
+                            total_cost += r.amount
+                            for svc in (r.grouped_data.get(GCP_GROUP_BY_KEY) or []):
+                                sname = svc.get("name", "Unknown")
+                                svc_agg[sname] = svc_agg.get(sname, 0) + svc.get("cost", 0)
+                    top_services = sorted(
+                        [{"name": k, "cost": round(v)} for k, v in svc_agg.items() if v > 0],
+                        key=lambda x: -x["cost"]
+                    )[:5]
+                else:
+                    logger.info(f"Cache MISS: GCP daily {credential.name} — calling BigQuery")
+                    
+                    resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
+                    
+                    combined_query = f"""
+                        SELECT
+                            FORMAT_TIMESTAMP('%Y-%m-%d', usage_start_time) AS day_key,
+                            service.description AS service_name,
+                            SUM(cost) + SUM((SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)) AS daily_cost,
+                            ANY_VALUE(currency) as currency
+                        FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                        WHERE usage_start_time >= TIMESTAMP('{seven_months_start}')
+                          AND usage_start_time <= TIMESTAMP('{current_month_end} 23:59:59')
+                        GROUP BY day_key, service_name
+                        ORDER BY day_key ASC
+                    """
+                    combined_result = log_gcp_call("BigQuery", "query", bq_client.query, combined_query)
+
+                    day_totals = {}
+                    day_services = {}
+                    currency_code = "USD"
+                    for row in combined_result:
+                        day_key = row["day_key"]
+                        svc_name = row["service_name"] or "Unknown"
+                        cost_val = float(row["daily_cost"] or 0)
+                        if row["currency"]:
+                            currency_code = row["currency"]
+                        day_totals[day_key] = day_totals.get(day_key, 0) + cost_val
+                        if day_key not in day_services:
+                            day_services[day_key] = {}
+                        day_services[day_key][svc_name] = day_services[day_key].get(svc_name, 0) + cost_val
+
+                    svc_agg_all = {}
+                    for day_key in sorted(day_totals.keys()):
+                        dt_row = datetime.strptime(day_key, "%Y-%m-%d")
+                        daily_data.append({"day": dt_row.strftime("%m/%d"), "cost": round(day_totals[day_key])})
+                        if day_key >= current_month_start:
+                            total_cost += day_totals[day_key]
+                            for svc, cost_v in day_services.get(day_key, {}).items():
+                                svc_agg_all[svc] = svc_agg_all.get(svc, 0) + cost_v
+
+                    top_services = sorted(
+                        [{"name": k, "cost": round(v)} for k, v in svc_agg_all.items() if v > 0],
+                        key=lambda x: -x["cost"]
+                    )[:5]
+
+                    for day_key, day_amount in day_totals.items():
+                        existing = await db.execute(
+                            select(GCPDailyCost).where(
+                                GCPDailyCost.credential_id == credential.id,
+                                GCPDailyCost.date == day_key
+                            )
+                        )
+                        dc = existing.scalars().first()
+                        if not dc:
+                            dc = GCPDailyCost(credential_id=credential.id, date=day_key)
+                        dc.amount = day_amount
+                        dc.unit = currency_code
+                        svc_list = [{"name": k, "cost": v} for k, v in day_services.get(day_key, {}).items()]
+                        dc.grouped_data = {GCP_GROUP_BY_KEY: svc_list}
+                        db.add(dc)
+                    await db.commit()
+                    cost_cache_hit = True
+
+            if not cost_cache_hit:
+                resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
+                
+                current_cost_query = f"""
+                    SELECT
+                        IFNULL(SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)), 0) AS total_cost,
+                        ANY_VALUE(currency) as currency
+                    FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                    WHERE usage_start_time >= '{current_month_start}'
+                      AND usage_start_time <= '{current_month_end}T23:59:59'
+                """
+                current_result = log_gcp_call("BigQuery", "query", bq_client.query, current_cost_query)
+                for row in current_result:
+                    total_cost = float(row["total_cost"])
+                    if row["currency"]:
+                        currency_code = row["currency"]
+
+                service_query = f"""
+                    SELECT
+                        service.description AS service_name,
+                        SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)) AS service_cost
+                    FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                    WHERE usage_start_time >= '{current_month_start}'
+                      AND usage_start_time <= '{current_month_end}T23:59:59'
+                    GROUP BY service.description
+                    HAVING service_cost > 0
+                    ORDER BY service_cost DESC
+                    LIMIT 5
+                """
+                service_result = log_gcp_call("BigQuery", "query", bq_client.query, service_query)
+                for row in service_result:
+                    top_services.append({
+                        "name": row["service_name"],
+                        "cost": round(float(row["service_cost"]))
+                    })
+
+                monthly_query = f"""
+                    SELECT
+                        FORMAT_TIMESTAMP('%Y-%m', usage_start_time) AS month_key,
+                        EXTRACT(MONTH FROM usage_start_time) AS month_num,
+                        SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)) AS monthly_cost
+                    FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                    WHERE usage_start_time >= '{seven_months_start}'
+                    GROUP BY month_key, month_num
+                    ORDER BY month_key ASC
+                """
+                month_names = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
+                monthly_result = bq_client.query(monthly_query)
+                for row in monthly_result:
+                    m_idx = int(row["month_num"]) - 1
+                    monthly_data.append({
+                        "month": month_names[m_idx] if 0 <= m_idx < 12 else str(row["month_key"]),
+                        "cost": round(float(row["monthly_cost"]))
+                    })
+
+            resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
             last_cost_query = f"""
                 SELECT
-                    IFNULL(SUM(cost), 0) AS total_cost
-                FROM `{credential.project_id}.{dataset}.{table}`
+                    IFNULL(SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)), 0) AS total_cost
+                FROM `{credential.project_id}.{dataset}.{resolved_table}`
                 WHERE usage_start_time >= '{last_month_start}'
                   AND usage_start_time < '{last_month_end_str}T23:59:59'
             """
@@ -931,26 +1257,9 @@ async def get_dashboard_stats(
                 if last_total > 0:
                     cost_trend = round(((total_cost - last_total) / last_total) * 100, 1)
 
-            monthly_query = f"""
-                SELECT
-                    FORMAT_TIMESTAMP('%Y-%m', usage_start_time) AS month_key,
-                    EXTRACT(MONTH FROM usage_start_time) AS month_num,
-                    ROUND(SUM(cost), 2) AS monthly_cost
-                FROM `{credential.project_id}.{dataset}.{table}`
-                WHERE usage_start_time >= '{seven_months_start}'
-                GROUP BY month_key, month_num
-                ORDER BY month_key ASC
-            """
-            month_names = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
-            monthly_result = bq_client.query(monthly_query)
-            for row in monthly_result:
-                m_idx = int(row["month_num"]) - 1
-                monthly_data.append({
-                    "month": month_names[m_idx] if 0 <= m_idx < 12 else str(row["month_key"]),
-                    "cost": round(float(row["monthly_cost"]))
-                })
         except Exception as e:
-            print(f"error: {e}")
+            logger.error(f"BigQuery Failed: {e}")
+            total_cost, currency_code = _get_monitoring_total_cost(creds_obj, credential.project_id)
 
         budget_used = 0
         alertsCount = 0
@@ -966,22 +1275,22 @@ async def get_dashboard_stats(
                 if budget_list:
                     budget = budget_list[0]
                     if budget.amount.specified_amount:
-                        budget_amount = float(budget.amount.specified_amount.units)
+                        budget_amount = float(budget.amount.specified_amount.units) + (budget.amount.specified_amount.nanos / 1e9)
                         if budget_amount > 0:
                             budget_used = round((total_cost / budget_amount) * 100)
+                    
                     for b in budget_list:
                         if b.amount.specified_amount:
-                            b_amount = float(b.amount.specified_amount.units)
+                            b_amount = float(b.amount.specified_amount.units) + (b.amount.specified_amount.nanos / 1e9)
                             if b_amount > 0 and total_cost > b_amount * 0.8:
                                 alertsCount += 1
                                 recent_alerts.append({
-                                    "message": f"예산 초과: {b.display_name} 예산의 {round((total_cost/b_amount)*100)}% 사용",
+                                    "message": f"예산 초과 관측: {b.display_name} 예산의 {round((total_cost/b_amount)*100)}% 사용됨",
                                     "severity": "error" if total_cost > b_amount else "warning",
                                     "date": datetime.now().strftime("%Y-%m-%d")
                                 })
             except Exception as e:
                 print(f"error: {e}")
-
 
         try:
             asset_client = asset_v1.AssetServiceClient(credentials=creds_obj)
@@ -1013,21 +1322,40 @@ async def get_dashboard_stats(
             print(f"Asset count error: {e}")
             resources_summary = []
 
+        recommendations = []
+        try:
+            recommender_client = recommender_v1.RecommenderClient(credentials=creds_obj)
+            parent = f"projects/{credential.project_id}/locations/global/recommenders/google.compute.instance.IdleResourceRecommender"
+            for rec in recommender_client.list_recommendations(parent=parent):
+                recommendations.append({
+                    "service": "Compute Engine",
+                    "title": "Idle VM detected",
+                    "impact": f"${rec.primary_impact.cost_projection.cost.units}/month" if rec.primary_impact and rec.primary_impact.cost_projection else "Unknown",
+                    "description": rec.description
+                })
+        except Exception as e:
+            print(f"Recommender query error: {e}")
+
         return {
-            "totalCost": round(total_cost),
+            "totalCost": round(total_cost, 2),
+            "currencyCode": currency_code,
             "costTrend": cost_trend,
             "topServices": top_services,
             "monthlyData": monthly_data,
+            "dailyData": daily_data,
             "activeResources": active_resources,
             "budgetUsed": budget_used,
             "alerts": alertsCount,
             "recentAlerts": recent_alerts,
+            "recommendations": recommendations,
             "resourcesSummary": resources_summary,
             "timestamp": datetime.now().isoformat()
         }
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

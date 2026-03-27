@@ -7,7 +7,11 @@
 		container_type?: string;
 	}
 
-	let { quotas = [] }: { quotas: Quota[] } = $props();
+	interface Props {
+		quotas: Quota[];
+	}
+
+	let { quotas = [] }: Props = $props();
 </script>
 
 <div class="quotas-container glass">
