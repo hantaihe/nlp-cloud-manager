@@ -32,7 +32,8 @@
 		const activeName = localStorage.getItem('aws_active_name') || '';
 
 		try {
-			const summaryRes = await fetch(`http://localhost:3002/billing/summary?name=${activeName}`);
+			const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:3002';
+		const summaryRes = await fetch(`${apiBase}/billing/summary?name=${activeName}`);
 			if (!summaryRes.ok) {
 				const errData = await summaryRes.json();
 				throw new Error(errData.message || 'AWS 정보 불러오기 실패');
@@ -48,7 +49,7 @@
 
 			filters.groupBy.forEach((dim) => queryParams.append('group_by_dimension', dim));
 
-			const costRes = await fetch(`http://localhost:3002/billing/cost?${queryParams.toString()}`);
+			const costRes = await fetch(`${apiBase}/billing/cost?${queryParams.toString()}`);
 			if (!costRes.ok) throw new Error('AWS 정보 불러오기 실패');
 			const costData = await costRes.json();
 

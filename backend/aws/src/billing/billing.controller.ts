@@ -9,6 +9,11 @@ export class BillingController {
         private readonly credentialsService: CredentialsService,
     ) { }
 
+    @Get('health')
+    health() {
+        return { status: 'ok' };
+    }
+
     @Get('cost')
     async getCost(
         @Query('name') name?: string,

@@ -1,5 +1,10 @@
 import { SERVICES, type ServiceConfig } from './services';
 
+export interface CurrencyCost {
+    currency: string;
+    total: number;
+}
+
 export interface CloudStats {
     totalCost: number;
     costTrend: number;
@@ -23,6 +28,7 @@ export interface CloudStats {
     currencyCode?: string;
     unit?: string;
     error?: string;
+    totalCostByCurrency?: CurrencyCost[];
 }
 
 function parseApiResponse(data: any, providerColor: string): CloudStats | null {
@@ -129,13 +135,13 @@ export async function fetchServiceStats(
             const need = (type: string) => !visibleTypes || visibleTypes.has(type);
 
             const gcpSubApis: { key: string; url: string; needed: boolean }[] = [
-                { key: 'quotas',           url: `${service.apiUrl}/quotas`,                 needed: need('gcp-quotas') },
-                { key: 'assets',           url: `${service.apiUrl}/assets`,                 needed: need('gcp-assets') },
-                { key: 'billing',          url: `${service.apiUrl}/billing/accounts`,       needed: need('gcp-billing-accounts') },
-                { key: 'logging',          url: `${service.apiUrl}/logging/entries`,        needed: need('gcp-logging') },
-                { key: 'monitoring',       url: `${service.apiUrl}/monitoring/metrics`,     needed: need('gcp-monitoring') },
-                { key: 'governance',       url: `${service.apiUrl}/org-policy/constraints`, needed: need('gcp-governance') },
-                { key: 'recommendations',  url: `${service.apiUrl}/recommendations`,        needed: need('gcp-recommendations') },
+                { key: 'quotas', url: `${service.apiUrl}/quotas`, needed: need('gcp-quotas') },
+                { key: 'assets', url: `${service.apiUrl}/assets`, needed: need('gcp-assets') },
+                { key: 'billing', url: `${service.apiUrl}/billing/accounts`, needed: need('gcp-billing-accounts') },
+                { key: 'logging', url: `${service.apiUrl}/logging/entries`, needed: need('gcp-logging') },
+                { key: 'monitoring', url: `${service.apiUrl}/monitoring/metrics`, needed: need('gcp-monitoring') },
+                { key: 'governance', url: `${service.apiUrl}/org-policy/constraints`, needed: need('gcp-governance') },
+                { key: 'recommendations', url: `${service.apiUrl}/recommendations`, needed: need('gcp-recommendations') },
             ];
 
             const active = gcpSubApis.filter((a) => a.needed);
@@ -148,10 +154,10 @@ export async function fetchServiceStats(
                         const result = results[i];
                         if (result.status !== 'fulfilled') return;
                         const val = result.value;
-                        if (key === 'quotas')     stats.quotas = val.quota_infos;
-                        if (key === 'assets')     stats.assets = val.assets;
-                        if (key === 'billing')    stats.billingAccounts = val.billing_accounts;
-                        if (key === 'logging')    stats.logging = val.entries;
+                        if (key === 'quotas') stats.quotas = val.quota_infos;
+                        if (key === 'assets') stats.assets = val.assets;
+                        if (key === 'billing') stats.billingAccounts = val.billing_accounts;
+                        if (key === 'logging') stats.logging = val.entries;
                         if (key === 'governance') stats.governance = val.constraints;
                         if (key === 'recommendations') {
                             stats.recommendations = (val.recommendations || []).map((r: any) => ({
@@ -196,6 +202,16 @@ export const fetchAwsStats = () => fetchServiceStats('aws');
 export const fetchAzureStats = () => fetchServiceStats('azure');
 export const fetchGcpStats = () => fetchServiceStats('gcp');
 
+const SERVICE_CURRENCY: Record<string, string> = {
+    aws: 'USD',
+    gcp: 'USD',
+    azure: 'KRW'
+};
+
+export function getServiceCurrency(serviceId: string): string {
+    return SERVICE_CURRENCY[serviceId] || 'USD';
+}
+
 export function getCombinedStats(
     providers: Record<string, CloudStats | undefined>,
     selected: Record<string, boolean>
@@ -215,9 +231,21 @@ export function getCombinedStats(
             monthlyData: [],
             activeResources: 0,
             budgetUsed: 0,
-            alerts: 0
+            alerts: 0,
+            totalCostByCurrency: []
         };
     }
+
+    const currencyMap = new Map<string, number>();
+    SERVICES.forEach(service => {
+        if (selected[service.id] && providers[service.id]) {
+            const currency = getServiceCurrency(service.id);
+            const cost = providers[service.id]!.totalCost;
+            currencyMap.set(currency, (currencyMap.get(currency) || 0) + cost);
+        }
+    });
+    const totalCostByCurrency: CurrencyCost[] = Array.from(currencyMap.entries())
+        .map(([currency, total]) => ({ currency, total: Math.round(total) }));
 
     const totalCost = items.reduce((s, i) => s + i.totalCost, 0);
     const costTrend = totalCost === 0 ? 0 :
@@ -265,8 +293,6 @@ export function getCombinedStats(
     const recentAlerts = items.flatMap(i => i.recentAlerts || []);
     const resourcesSummary = items.flatMap(i => i.resourcesSummary || []);
 
-    const currencyCode = items.every(i => i.currencyCode === items[0].currencyCode) ? items[0].currencyCode : 'USD';
-
     return {
         totalCost: Math.round(totalCost),
         costTrend: Math.round(costTrend * 10) / 10,
@@ -276,8 +302,7 @@ export function getCombinedStats(
         activeResources,
         budgetUsed,
         alerts,
-        currencyCode,
-        unit: currencyCode,
+        totalCostByCurrency,
         recommendations: sortedRecommendations.slice(0, 10),
         recentAlerts: recentAlerts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5),
         resourcesSummary

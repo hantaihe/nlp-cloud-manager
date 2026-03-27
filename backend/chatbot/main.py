@@ -21,9 +21,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HTTP")
 
 CHATBOT_PROVIDER = os.getenv("CHATBOT_PROVIDER", "gemini")   # "ollama" | "gemini"
-OLLAMA_MODEL    = os.getenv("CHATBOT_MODEL", "qwen3:0.6b")
-GEMINI_MODEL    = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-GOOGLE_API_KEY  = os.getenv("GOOGLE_API_KEY", "[GCP_API_KEY]")
+OLLAMA_MODEL    = os.getenv("CHATBOT_MODEL", "qwen3:1.7b")
+GEMINI_MODEL    = os.getenv("GEMINI_MODEL", "gemini-3-pro-preview")
+GOOGLE_API_KEY  = os.getenv("GOOGLE_API_KEY", "[GOOGLE_API_KEY]")
 
 def build_model():
     if CHATBOT_PROVIDER == "gemini":
@@ -60,16 +60,12 @@ async def log_requests(request: Request, call_next):
         f" Body: {json.dumps(body_json)}"
     )
 
-    async def receive():
-        return {"type": "http.request", "body": body}
-    request._receive = receive
-
     response = await call_next(request)
-    
+
     process_time = (time.time() - start_time) * 1000
-    
-    from fastapi.responses import StreamingResponse
-    if isinstance(response, StreamingResponse):
+
+    content_type = response.headers.get("content-type", "")
+    if "ndjson" in content_type or "event-stream" in content_type:
         return response
 
     headers = dict(response.headers)
@@ -97,6 +93,7 @@ async def log_requests(request: Request, call_next):
     )
 
 agents: Dict[str, Any] = {}
+conversation_histories: Dict[str, list] = {}
 
 class Config(BaseModel):
     aws_credential_name: str = ""
@@ -130,31 +127,16 @@ async def get_mcp_servers(config: Config):
             stmt = select(AWSCredential).where(AWSCredential.name == config.aws_credential_name)
             res = await session.execute(stmt)
             aws = res.scalar_one_or_none()
+
             if aws:
-                mcp_servers["awslabs-core-mcp-server"] = {
+                mcp_servers["awslabs-aws-api-mcp-server"] = {
                     "command": "uvx",
-                    "args": ["--python", "3.13", "awslabs.core-mcp-server@latest"],
-                    "env": {
+                    "args": ["awslabs.aws-api-mcp-server@latest"],
+                    "env": { 
                         "FASTMCP_LOG_LEVEL": "ERROR",
                         "AWS_ACCESS_KEY_ID": aws.accessKeyId,
                         "AWS_SECRET_ACCESS_KEY": aws.secretAccessKey,
                         "AWS_REGION": aws.region,
-                        "aws-foundation": "true",
-                        "dev-tools": "true",
-                        "ci-cd-devops": "true",
-                        "container-orchestration": "true",
-                        "serverless-architecture": "true",
-                        "analytics-warehouse": "true",
-                        "data-platform-eng": "true",
-                        "frontend-dev": "true",
-                        "solutions-architect": "true",
-                        "finops": "true",
-                        "monitoring-observability": "true",
-                        "caching-performance": "true",
-                        "security-identity": "true",
-                        "sql-db-specialist": "true",
-                        "timeseries-db-specialist": "true",
-                        "messaging-events": "true",
                     },
                     "transport": "stdio"
                 }
@@ -272,29 +254,35 @@ async def get_or_create_agent(session_id: str, config: Config):
         당신은 전 세계 최고의 "멀티 클라우드 플랫폼 전문가(Multi-Cloud Platform Expert)"입니다.
         사용자의 인프라(AWS, Azure, GCP)를 분석, 설계 및 운영하는 임무를 맡고 있습니다.
 
-        1. 핵심
-        - 분석적 사고: 단순히 리소스를 생성하는 것이 아니라, 왜 해당 서비스를 선택해야 하는지 아키텍처 관점에서 설명합니다.
-        - 클라우드 중립성: 특정 벤더에 편향되지 않고, 비용 효율성과 성능(Latency, Throughput)에 기반하여 최적의 클라우드를 추천합니다.
-        - Security First: 모든 제안에는 IAM 권한 최소화, 데이터 암호화, 네트워크 격리 등 보안 모범 사례가 포함되어야 합니다.
+        ## 역할
+        당신은 멀티 클라우드 플랫폼 전문가이자 실행 에이전트입니다.
+        사용자의 요청에 따라 AWS, Azure, GCP 리소스를 직접 생성·조회·수정·삭제합니다.
 
-        2. 클라우드별 전문 지식 활용 가이드
-        - AWS (awslabs-core-mcp-server): EC2, S3, RDS 등 핵심 서비스와 Well-Architected Framework를 기준으로 답변하십시오.
-        - Azure (msmcp-azure): Enterprise 구조, Entra ID(Active Directory) 통합, Azure Native 서비스와의 연동을 중점적으로 다룹니다.
-        - GCP (Google Cloud APIs):
-            - 인프라 관리 시 Resource Manager와 Compute Engine을 적극 활용하십시오.
-            - 기술적 궁금증은 반드시 'google-developer-knowledge' 도구의 `search_documents`를 먼저 호출하여 최신 문서를 기반으로 답변하십시오.
-            - 상세 구현 코드가 필요하면 `get_document`를 통해 컨텍스트를 확보하십시오.
+        ## 핵심 원칙: 도구를 반드시 호출하라
+        - 리소스 생성/조회/수정/삭제 요청이 오면 **반드시 해당 MCP 도구를 호출**하여 실제로 수행하십시오.
+        - 코드 예시(Terraform, CLI 명령어 등)만 제공하고 실행을 미루는 것은 금지입니다.
+        - 도구 호출 없이 "다음 명령어를 실행하세요" 식의 응답은 허용되지 않습니다.
+        - 작업 전 필요한 파라미터가 불분명하면 한 번만 확인하고, 확인 후에는 즉시 실행하십시오.
 
-        3. 작업 수행 순서
-        - Step 1. 상황 파악: 사용자의 요구사항이 특정 클라우드에 종속적인지, 멀티 클라우드 구성인지 먼저 파악하십시오.
-        - Step 2. 도구 활용: 가능한 경우 도구를 사용하여 현재 리소스 상태나 공식 문서를 실시간으로 확인하십시오.
-        - Step 3. 비교 분석: 클라우드 간 서비스 비교 요청 시(예: AWS Lambda vs GCP Functions), 실행 환경, 트리거 방식, Cold Start 특성, 가격 정책을 표 형식으로 비교하여 제시하십시오.
-        - Step 4. 실행 및 검증: 리소스 생성이나 변경 요청 시, 예상되는 영향(Impact)을 먼저 설명한 뒤 실행하십시오.
+        ## 작업 수행 절차
+        1. **의도 파악**: 생성(Create) / 조회(Read) / 수정(Update) / 삭제(Delete) / 분석 중 무엇인지 판단합니다.
+        2. **즉시 실행**: CRUD 요청이면 적절한 MCP 도구를 호출하여 바로 수행합니다. 설명은 실행 후에 덧붙입니다.
+        3. **결과 보고**: 도구 응답을 바탕으로 성공 여부, 생성된 리소스 ID/ARN/URL 등을 한국어로 정리합니다.
+        4. **분석 요청**: 비교·설계·비용 최적화 등 분석 요청일 때만 설명 중심으로 답변합니다.
 
-        4. 제약 사항
-        - 자격 증명(Access Key, Secret 등)은 절대 노출하지 마십시오.
-        - 복잡한 인프라 구성 시 가급적 Terraform이나 CloudFormation 같은 IaC 코드를 함께 제안하십시오.
-        - 답변은 전문적이면서도 명확한 한국어로 작성하되, 기술 용어는 원문을 병기하십시오.
+        ## 클라우드별 도구 사용 가이드
+        - **AWS** (`awslabs-core-mcp-server`): EC2, S3, RDS, Lambda 등 전반적인 AWS 리소스 CRUD에 사용합니다.
+        - **Azure** (`Azure MCP Server`): VM, Storage, 네트워크 등 Azure 리소스 CRUD에 사용합니다.
+        - **GCP** (`gcp-compute`, `gcp-sql`, `gcp-bigquery` 등): 서비스별 전용 MCP 엔드포인트를 사용합니다.
+            - 기술 문서가 필요하면 `google-developer-knowledge`의 `search_documents`를 호출합니다.
+
+        ## 보안
+        - 자격 증명(Access Key, Secret, Token 등)은 절대 응답에 포함하지 마십시오.
+        - 삭제·중단 작업은 리소스 식별자를 명시하고 실행합니다.
+
+        ## 답변 형식
+        - 한국어로 작성하되 기술 용어는 원문을 병기합니다.
+        - 실행 결과를 먼저 제시하고, 추가 설명은 간결하게 덧붙입니다.
         """
 
         agents[session_id] = create_agent(
@@ -312,10 +300,15 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat(request: ChatRequest):
     agent = await get_or_create_agent(request.session_id, request.config)
+    history = conversation_histories.setdefault(request.session_id, [])
+    history.append({"role": "user", "content": request.message})
     try:
-        result = await agent.ainvoke({"messages": [{"role": "user", "content": request.message}]})
-        return {"reply": result["messages"][-1].content, "session_id": request.session_id}
+        result = await agent.ainvoke({"messages": history})
+        reply = result["messages"][-1].content
+        history.append({"role": "assistant", "content": reply})
+        return {"reply": reply, "session_id": request.session_id}
     except Exception as e:
+        history.pop()
         raise HTTPException(status_code=500, detail=str(e))
 
 from fastapi.responses import StreamingResponse
@@ -326,11 +319,21 @@ import re
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     agent = await get_or_create_agent(request.session_id, request.config)
+    history = conversation_histories.setdefault(request.session_id, [])
+    history.append({"role": "user", "content": request.message})
 
     async def event_generator():
         try:
-            result = await agent.ainvoke({"messages": [{"role": "user", "content": request.message}]})
-            full_text = result["messages"][-1].content
+            result = await agent.ainvoke({"messages": history})
+            raw_content = result["messages"][-1].content
+            if isinstance(raw_content, list):
+                full_text = " ".join(
+                    part["text"] if isinstance(part, dict) else str(part)
+                    for part in raw_content
+                    if not isinstance(part, dict) or part.get("type") != "tool_use"
+                )
+            else:
+                full_text = raw_content or ""
 
             think_match = re.search(r'<think>(.*?)</think>', full_text, re.DOTALL)
             if think_match:
@@ -351,9 +354,12 @@ async def chat_stream(request: ChatRequest):
                 yield json.dumps({"type": "token", "token": response_content[i:i+12]}) + "\n"
                 await asyncio.sleep(0.025)
 
+            history.append({"role": "assistant", "content": response_content})
             yield json.dumps({"type": "done"}) + "\n"
 
         except Exception as e:
+            history.pop()
+            logger.exception(f"Agent error for session {request.session_id}: {e}")
             yield json.dumps({"type": "error", "error": str(e)}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
@@ -363,7 +369,9 @@ async def clear_session(request: Dict[str, str] = Body(...)):
     session_id = request.get("session_id", "default")
     if session_id in agents:
         del agents[session_id]
-        logger.info(f"Cleared session: {session_id}")
+    if session_id in conversation_histories:
+        del conversation_histories[session_id]
+    logger.info(f"Cleared session: {session_id}")
     return {"status": "cleared", "session_id": session_id}
 
 @app.get("/health")

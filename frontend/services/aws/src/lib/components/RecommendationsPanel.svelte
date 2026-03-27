@@ -11,6 +11,8 @@
 
 	let { name = '' }: Props = $props();
 
+	const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3002';
+
 	let recommendations = $state<Recommendation[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -20,7 +22,7 @@
 		error = null;
 		try {
 			const res = await fetch(
-				`http://localhost:3002/billing/recommendations?name=${encodeURIComponent(name)}`
+				`${API_BASE}/billing/recommendations?name=${encodeURIComponent(name)}`
 			);
 			if (!res.ok) {
 				const errData = await res.json().catch(() => ({}));

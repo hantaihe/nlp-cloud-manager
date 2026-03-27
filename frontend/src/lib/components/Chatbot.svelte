@@ -12,21 +12,25 @@
 		isOpen = !isOpen;
 	}
 
+	const chatbotIframeUrl = import.meta.env.VITE_CHATBOT_IFRAME_URL ?? 'http://localhost:3106';
+	const awsApiUrl = import.meta.env.VITE_AWS_API_URL ?? 'http://localhost:3002';
+	const azureApiUrl = import.meta.env.VITE_AZURE_API_URL ?? 'http://localhost:8001';
+	const gcpApiUrl = import.meta.env.VITE_GCP_API_URL ?? 'http://localhost:8002';
+
 	let themeSrc = $derived(() => {
-		const baseUrl = 'http://localhost:3106';
 		const aws = browser ? localStorage.getItem('aws_active_name') || '' : '';
 		const azure = browser ? localStorage.getItem('azure_active_name') || '' : '';
 		const gcp = browser ? localStorage.getItem('gcp_active_name') || '' : '';
-		return `${baseUrl}?theme=${themeStore.current}&aws=${aws}&azure=${azure}&gcp=${gcp}`;
+		return `${chatbotIframeUrl}?theme=${themeStore.current}&aws=${aws}&azure=${azure}&gcp=${gcp}`;
 	});
 
 	async function fetchDefaultCredentials() {
 		if (!browser) return;
 
 		const services = [
-			{ key: 'aws_active_name', url: 'http://localhost:3002/credentials' },
-			{ key: 'azure_active_name', url: 'http://localhost:8001/credentials' },
-			{ key: 'gcp_active_name', url: 'http://localhost:8002/credentials' }
+			{ key: 'aws_active_name', url: `${awsApiUrl}/credentials` },
+			{ key: 'azure_active_name', url: `${azureApiUrl}/credentials` },
+			{ key: 'gcp_active_name', url: `${gcpApiUrl}/credentials` }
 		];
 
 		for (const service of services) {

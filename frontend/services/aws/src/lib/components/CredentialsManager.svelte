@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
+	const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3002';
+
 	let credentials: any[] = $state([]);
 	let activeName = $state('');
 	let newCred = $state({
@@ -21,7 +23,7 @@
 	async function fetchCredentials() {
 		loading = true;
 		try {
-			const res = await fetch('http://localhost:3002/credentials');
+			const res = await fetch(`${API_BASE}/credentials`);
 			if (res.ok) {
 				credentials = await res.json();
 				if (!activeName || !credentials.find((c) => c.name === activeName)) {
@@ -44,7 +46,7 @@
 		}
 
 		try {
-			const res = await fetch('http://localhost:3002/credentials', {
+			const res = await fetch(`${API_BASE}/credentials`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(newCred)
@@ -71,7 +73,7 @@
 		if (!confirm(`Delete credential "${name}"?`)) return;
 
 		try {
-			const res = await fetch(`http://localhost:3002/credentials/${name}`, {
+			const res = await fetch(`${API_BASE}/credentials/${name}`, {
 				method: 'DELETE'
 			});
 			if (res.ok) {

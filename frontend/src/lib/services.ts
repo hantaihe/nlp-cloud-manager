@@ -15,12 +15,16 @@ export interface ServiceConfig {
     }[];
 }
 
+const awsApiUrl = import.meta.env.VITE_AWS_API_URL ?? 'http://localhost:3002';
+const azureApiUrl = import.meta.env.VITE_AZURE_API_URL ?? 'http://localhost:8001';
+const gcpApiUrl = import.meta.env.VITE_GCP_API_URL ?? 'http://localhost:8002';
+
 export const SERVICES: ServiceConfig[] = [
     {
         id: 'aws',
         name: 'AWS',
-        url: 'http://127.0.0.1:5175',
-        apiUrl: 'http://localhost:3002/billing',
+        url: import.meta.env.VITE_AWS_IFRAME_URL ?? 'http://127.0.0.1:5175',
+        apiUrl: `${awsApiUrl}/billing`,
         color: '#ff9900',
         icon: '/icons/aws.svg',
         category: 'aws',
@@ -36,8 +40,8 @@ export const SERVICES: ServiceConfig[] = [
     {
         id: 'azure',
         name: 'Azure',
-        url: 'http://127.0.0.1:5176',
-        apiUrl: 'http://localhost:8001',
+        url: import.meta.env.VITE_AZURE_IFRAME_URL ?? 'http://127.0.0.1:5176',
+        apiUrl: azureApiUrl,
         color: '#0078d4',
         icon: '/icons/azure.svg',
         category: 'azure',
@@ -53,8 +57,8 @@ export const SERVICES: ServiceConfig[] = [
     {
         id: 'gcp',
         name: 'GCP',
-        url: 'http://127.0.0.1:5177',
-        apiUrl: 'http://localhost:8002',
+        url: import.meta.env.VITE_GCP_IFRAME_URL ?? 'http://127.0.0.1:5177',
+        apiUrl: gcpApiUrl,
         color: '#4285f4',
         icon: '/icons/gcp.svg',
         category: 'gcp',

@@ -26,6 +26,17 @@ from models import AzureCredential, AzureDailyCost
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HTTP")
 
+_mem_cache: dict = {}
+
+def _cache_get(key: str):
+    entry = _mem_cache.get(key)
+    if entry and time.time() < entry["exp"]:
+        return entry["val"]
+    return None
+
+def _cache_set(key: str, val, ttl_seconds: int):
+    _mem_cache[key] = {"val": val, "exp": time.time() + ttl_seconds}
+
 
 class CustomAzureLoggingPolicy(HttpLoggingPolicy):
     def on_request(self, request):
@@ -675,35 +686,78 @@ async def get_dashboard_stats(
             last_month_str = last_month_start.strftime("%Y-%m")
 
             try:
-                current_result = _cost_query(
+                consumption_client = ConsumptionManagementClient(
+                    azure_creds, credential.subscription_id, logging_policy=azure_logging_policy
+                )
+                budget_list = list(consumption_client.budgets.list(scope=scope))
+                if budget_list:
+                    budget_amount = float(budget_list[0].amount) if budget_list[0].amount else 0
+                    if budget_amount > 0:
+                        budget_used = round((total_cost / budget_amount) * 100)
+                    for b in budget_list:
+                        b_amount = float(b.amount) if b.amount else 0
+                        if b_amount > 0 and total_cost > b_amount * 0.8:
+                            alerts_count += 1
+                            recent_alerts.append({
+                                "message": f"Azure Budget Alert: {b.name} is at {round((total_cost / b_amount) * 100)}% usage.",
+                                "severity": "error" if total_cost > b_amount else "warning",
+                                "date": now.strftime("%Y-%m-%d"),
+                            })
+            except Exception as e:
+                logger.error(f"Budget query error: {e}")
+
+            try:
+                alert_result = cost_client.alerts.list(scope=scope)
+                for alert in (alert_result.value or []):
+                    alerts_count += 1
+                    recent_alerts.append({
+                        "message": alert.properties.description if alert.properties else str(alert.name),
+                        "severity": str(alert.properties.severity).lower() if alert.properties else "info",
+                        "date": now.strftime("%Y-%m-%d"),
+                    })
+            except Exception as e:
+                logger.error(f"Alerts query error: {e}")
+
+            _cache_set(budget_cache_key, {
+                "budget_used": budget_used,
+                "alerts_count": alerts_count,
+                "recent_alerts": recent_alerts,
+            }, 3600)
+
+        forecasted_cost = 0.0
+        forecast_cache_key = f"forecast:{credential.id}:{now.year}:{now.month}"
+        cached_forecast = _cache_get(forecast_cache_key)
+        if cached_forecast is not None:
+            logger.info(f"Cache HIT (memory): Azure forecast {credential.name}")
+            forecasted_cost = cached_forecast
+        else:
+            try:
+                last_day = calendar.monthrange(now.year, now.month)[1]
+                forecast_end = now.replace(day=last_day)
+                forecast_result = _forecast_query(
                     cost_client, scope,
                     {
                         "type": "Usage",
                         "timeframe": "Custom",
                         "timePeriod": {
                             "from": dt_from.strftime("%Y-%m-%dT00:00:00Z"),
-                            "to": dt_to.strftime("%Y-%m-%dT23:59:59Z"),
+                            "to": forecast_end.strftime("%Y-%m-%dT23:59:59Z"),
                         },
                         "dataset": {
-                            "granularity": "None",
-                            "aggregation": {"totalCost": {"function": "Sum", "name": "PreTaxCost"}},
-                            "grouping": grouping_param,
+                            "granularity": "Monthly",
+                            "aggregation": {"totalCost": {"function": "Sum", "name": "Cost"}},
                         },
+                        "includeActualCost": True,
+                        "includeFreshPartialCost": True,
                     },
                 )
-                cost_i = _col_idx(current_result.columns, "PreTaxCost", "Cost")
-                svc_i = _col_idx(current_result.columns, *grouping_dims, "ServiceName")
-                if current_result.rows:
-                    service_costs = []
-                    for row in current_result.rows:
-                        cost_val = float(row[cost_i]) if row[cost_i] else 0
-                        svc_name = str(row[svc_i]) if len(row) > svc_i else "Unknown"
-                        total_cost += cost_val
-                        service_costs.append({"name": svc_name, "cost": round(cost_val)})
-                    top_services = sorted(service_costs, key=lambda x: -x["cost"])[:5]
+                cost_i = _col_idx(forecast_result.columns, "Cost", "PreTaxCost")
+                if forecast_result.rows:
+                    for row in forecast_result.rows:
+                        forecasted_cost += float(row[cost_i]) if row[cost_i] else 0
+                _cache_set(forecast_cache_key, forecasted_cost, 4 * 3600)
             except Exception as e:
-                logger.error(f"Current cost query error: {e}")
-                traceback.print_exc()
+                logger.error(f"Forecast query error: {e}")
 
             try:
                 monthly_result = _cost_query(
@@ -803,22 +857,29 @@ async def get_dashboard_stats(
             logger.error(f"Forecast query error: {e}")
 
         recommendations: list = []
-        try:
-            advisor_client = AdvisorManagementClient(azure_creds, credential.subscription_id)
-            for rec in advisor_client.recommendations.list():
-                if rec.category == "Cost":
-                    recommendations.append({
-                        "service": "Azure Advisor",
-                        "title": rec.short_description.problem if rec.short_description else rec.name,
-                        "impact": (
-                            f"${rec.extended_properties.get('savingsAmount', '0')}/month"
-                            if rec.extended_properties
-                            else "High"
-                        ),
-                        "description": rec.short_description.solution if rec.short_description else "",
-                    })
-        except Exception as e:
-            logger.error(f"Advisor query error: {e}")
+        advisor_cache_key = f"advisor:{credential.id}"
+        cached_advisor = _cache_get(advisor_cache_key)
+        if cached_advisor is not None:
+            logger.info(f"Cache HIT (memory): Azure advisor {credential.name}")
+            recommendations = cached_advisor
+        else:
+            try:
+                advisor_client = AdvisorManagementClient(azure_creds, credential.subscription_id)
+                for rec in advisor_client.recommendations.list():
+                    if rec.category == "Cost":
+                        recommendations.append({
+                            "service": "Azure Advisor",
+                            "title": rec.short_description.problem if rec.short_description else rec.name,
+                            "impact": (
+                                f"${rec.extended_properties.get('savingsAmount', '0')}/month"
+                                if rec.extended_properties
+                                else "High"
+                            ),
+                            "description": rec.short_description.solution if rec.short_description else "",
+                        })
+                _cache_set(advisor_cache_key, recommendations, 6 * 3600)
+            except Exception as e:
+                logger.error(f"Advisor query error: {e}")
 
         return {
             "totalCost": round(total_cost, 2),

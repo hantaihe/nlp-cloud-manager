@@ -13,7 +13,7 @@
 	import LoggingPanel from './LoggingPanel.svelte';
 	import RecommendationsPanel from './RecommendationsPanel.svelte';
 
-	const API_BASE = 'http://localhost:8002';
+	const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8002';
 
 	let loading = $state(true);
 	let error: string | null = $state(null);

@@ -183,6 +183,10 @@ def _resolve_billing_table(client: bigquery.Client, project_id: str, dataset: st
 
     return table
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.get("/")
 async def root():
     return {"message": "GCP Cost & Billing API is running"}
@@ -329,7 +333,7 @@ async def get_billing_summary(
         bq_error = None
         try:
             bq_client = bigquery.Client(credentials=creds, project=credential.project_id)
-            dataset_name = "billing_export"
+            dataset_name = "all_billing_data"
             base_table = "gcp_billing_export_v1"
             resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset_name, base_table, billing_account_id)
             
@@ -512,7 +516,7 @@ async def delete_budget(
 
 @app.get("/bigquery/billing-export")
 async def query_billing_export(
-    dataset: str = "billing_export",
+    dataset: str = "all_billing_data",
     table: str = "gcp_billing_export_v1",
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -1029,7 +1033,7 @@ async def get_dashboard_stats(
     start: Optional[str] = None,
     end: Optional[str] = None,
     granularity: str = "MONTHLY",
-    dataset: str = "billing_export",
+    dataset: str = "all_billing_data",
     table: str = "gcp_billing_export_v1",
     name: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -1074,6 +1078,7 @@ async def get_dashboard_stats(
         seven_months_start = seven_months_ago.strftime("%Y-%m-%d")
 
         total_cost = 0
+        currency_code = "USD"
         top_services = []
         cost_trend = 0
         monthly_data = []
@@ -1189,73 +1194,158 @@ async def get_dashboard_stats(
                     cost_cache_hit = True
 
             if not cost_cache_hit:
-                resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
-                
-                current_cost_query = f"""
-                    SELECT
-                        IFNULL(SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)), 0) AS total_cost,
-                        ANY_VALUE(currency) as currency
-                    FROM `{credential.project_id}.{dataset}.{resolved_table}`
-                    WHERE usage_start_time >= '{current_month_start}'
-                      AND usage_start_time <= '{current_month_end}T23:59:59'
-                """
-                current_result = log_gcp_call("BigQuery", "query", bq_client.query, current_cost_query)
-                for row in current_result:
-                    total_cost = float(row["total_cost"])
-                    if row["currency"]:
-                        currency_code = row["currency"]
-
-                service_query = f"""
-                    SELECT
-                        service.description AS service_name,
-                        SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)) AS service_cost
-                    FROM `{credential.project_id}.{dataset}.{resolved_table}`
-                    WHERE usage_start_time >= '{current_month_start}'
-                      AND usage_start_time <= '{current_month_end}T23:59:59'
-                    GROUP BY service.description
-                    HAVING service_cost > 0
-                    ORDER BY service_cost DESC
-                    LIMIT 5
-                """
-                service_result = log_gcp_call("BigQuery", "query", bq_client.query, service_query)
-                for row in service_result:
-                    top_services.append({
-                        "name": row["service_name"],
-                        "cost": round(float(row["service_cost"]))
-                    })
-
-                monthly_query = f"""
-                    SELECT
-                        FORMAT_TIMESTAMP('%Y-%m', usage_start_time) AS month_key,
-                        EXTRACT(MONTH FROM usage_start_time) AS month_num,
-                        SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)) AS monthly_cost
-                    FROM `{credential.project_id}.{dataset}.{resolved_table}`
-                    WHERE usage_start_time >= '{seven_months_start}'
-                    GROUP BY month_key, month_num
-                    ORDER BY month_key ASC
-                """
+                MONTHLY_KEY = "monthly_svc"
                 month_names = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
-                monthly_result = bq_client.query(monthly_query)
-                for row in monthly_result:
-                    m_idx = int(row["month_num"]) - 1
-                    monthly_data.append({
-                        "month": month_names[m_idx] if 0 <= m_idx < 12 else str(row["month_key"]),
-                        "cost": round(float(row["monthly_cost"]))
-                    })
 
-            resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
-            last_cost_query = f"""
-                SELECT
-                    IFNULL(SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)), 0) AS total_cost
-                FROM `{credential.project_id}.{dataset}.{resolved_table}`
-                WHERE usage_start_time >= '{last_month_start}'
-                  AND usage_start_time < '{last_month_end_str}T23:59:59'
-            """
-            last_result = log_gcp_call("BigQuery", "query", bq_client.query, last_cost_query)
-            for row in last_result:
-                last_total = float(row["total_cost"])
-                if last_total > 0:
-                    cost_trend = round(((total_cost - last_total) / last_total) * 100, 1)
+                # ── Build first-of-month date keys ───────────────────────────────
+                first_of_months: list[str] = []
+                _m = seven_months_ago.replace(day=1)
+                while _m.strftime("%Y-%m") <= dt_end.strftime("%Y-%m"):
+                    first_of_months.append(_m.strftime("%Y-%m-01"))
+                    _m = (_m + timedelta(days=32)).replace(day=1)
+                current_month_date = datetime.now().strftime("%Y-%m-01")
+
+                # ── DB cache check ───────────────────────────────────────────────
+                db_result = await db.execute(
+                    select(GCPDailyCost)
+                    .where(GCPDailyCost.credential_id == credential.id)
+                    .where(GCPDailyCost.date.in_(first_of_months))
+                    .order_by(GCPDailyCost.date)
+                )
+                db_rows = {r.date: r for r in db_result.scalars().all()}
+
+                def _is_fresh_gcp(row) -> bool:
+                    if row is None or row.updated_at is None:
+                        return False
+                    updated = row.updated_at.replace(tzinfo=None) if row.updated_at.tzinfo else row.updated_at
+                    return (datetime.utcnow() - updated).total_seconds() < 3600
+
+                db_cache_hit = (
+                    all(d in db_rows and db_rows[d].grouped_data and MONTHLY_KEY in db_rows[d].grouped_data
+                        for d in first_of_months)
+                    and _is_fresh_gcp(db_rows.get(current_month_date))
+                )
+
+                if db_cache_hit:
+                    logger.info(f"Cache HIT (DB): GCP monthly cost {credential.name}")
+                    last_total = 0.0
+                    last_month_date = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m-01")
+                    for d in sorted(db_rows.keys()):
+                        r = db_rows[d]
+                        dt_r = datetime.strptime(d, "%Y-%m-01")
+                        m_idx = dt_r.month - 1
+                        monthly_data.append({
+                            "month": month_names[m_idx],
+                            "cost": round(r.amount)
+                        })
+                        if d == current_month_date:
+                            total_cost = r.amount
+                            currency_code = r.unit or "USD"
+                            top_services = r.grouped_data.get(MONTHLY_KEY, [])
+                        if d == last_month_date:
+                            last_total = r.amount
+                    if last_total > 0 and total_cost > 0:
+                        cost_trend = round(((total_cost - last_total) / last_total) * 100, 1)
+                    cost_cache_hit = True
+                else:
+                    logger.info(f"Cache MISS (DB): GCP monthly cost {credential.name} — calling BigQuery")
+                    resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
+
+                    current_cost_query = f"""
+                        SELECT
+                            IFNULL(SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)), 0) AS total_cost,
+                            ANY_VALUE(currency) as currency
+                        FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                        WHERE usage_start_time >= '{current_month_start}'
+                          AND usage_start_time <= '{current_month_end}T23:59:59'
+                    """
+                    current_result = log_gcp_call("BigQuery", "query", bq_client.query, current_cost_query)
+                    for row in current_result:
+                        total_cost = float(row["total_cost"])
+                        if row["currency"]:
+                            currency_code = row["currency"]
+
+                    service_query = f"""
+                        SELECT
+                            service.description AS service_name,
+                            SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)) AS service_cost
+                        FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                        WHERE usage_start_time >= '{current_month_start}'
+                          AND usage_start_time <= '{current_month_end}T23:59:59'
+                        GROUP BY service.description
+                        HAVING service_cost > 0
+                        ORDER BY service_cost DESC
+                        LIMIT 5
+                    """
+                    service_result = log_gcp_call("BigQuery", "query", bq_client.query, service_query)
+                    for row in service_result:
+                        top_services.append({
+                            "name": row["service_name"],
+                            "cost": round(float(row["service_cost"]))
+                        })
+
+                    monthly_query = f"""
+                        SELECT
+                            FORMAT_TIMESTAMP('%Y-%m', usage_start_time) AS month_key,
+                            EXTRACT(MONTH FROM usage_start_time) AS month_num,
+                            SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)) AS monthly_cost
+                        FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                        WHERE usage_start_time >= '{seven_months_start}'
+                        GROUP BY month_key, month_num
+                        ORDER BY month_key ASC
+                    """
+                    monthly_result = bq_client.query(monthly_query)
+                    monthly_by_date: dict = {}
+                    last_total = 0.0
+                    last_month_str_gcp = (datetime.now().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+                    for row in monthly_result:
+                        m_idx = int(row["month_num"]) - 1
+                        cost_val = round(float(row["monthly_cost"]))
+                        month_key = str(row["month_key"])
+                        monthly_data.append({
+                            "month": month_names[m_idx] if 0 <= m_idx < 12 else month_key,
+                            "cost": cost_val
+                        })
+                        d_key = f"{month_key}-01"
+                        monthly_by_date[d_key] = cost_val
+                        if month_key == last_month_str_gcp:
+                            last_total = cost_val
+                    if last_total > 0 and total_cost > 0:
+                        cost_trend = round(((total_cost - last_total) / last_total) * 100, 1)
+
+                    last_cost_query = f"""
+                        SELECT
+                            IFNULL(SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) AS c)), 0) AS total_cost
+                        FROM `{credential.project_id}.{dataset}.{resolved_table}`
+                        WHERE usage_start_time >= '{last_month_start}'
+                          AND usage_start_time < '{last_month_end_str}T23:59:59'
+                    """
+                    last_result = log_gcp_call("BigQuery", "query", bq_client.query, last_cost_query)
+                    for row in last_result:
+                        last_total = float(row["total_cost"])
+                        if last_total > 0:
+                            cost_trend = round(((total_cost - last_total) / last_total) * 100, 1)
+
+                    # ── Write monthly aggregates to DB ───────────────────────────
+                    monthly_by_date[current_month_date] = total_cost
+                    for d_key, month_amount in monthly_by_date.items():
+                        ex = await db.execute(
+                            select(GCPDailyCost).where(
+                                GCPDailyCost.credential_id == credential.id,
+                                GCPDailyCost.date == d_key,
+                            )
+                        )
+                        dc = ex.scalars().first()
+                        if not dc:
+                            dc = GCPDailyCost(credential_id=credential.id, date=d_key)
+                        dc.amount = month_amount
+                        dc.unit = currency_code
+                        dc.grouped_data = {
+                            MONTHLY_KEY: top_services if d_key == current_month_date else []
+                        }
+                        db.add(dc)
+                    if monthly_by_date:
+                        await db.commit()
 
         except Exception as e:
             logger.error(f"BigQuery Failed: {e}")

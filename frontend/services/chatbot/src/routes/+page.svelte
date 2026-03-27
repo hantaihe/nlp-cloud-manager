@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
+	const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
+
 	type Message = { role: 'user' | 'assistant' | 'thinking'; content: string };
 
 	let messages = $state<Message[]>([]);
@@ -54,7 +56,7 @@
 		let responseIdx = -1;
 
 		try {
-			const response = await fetch('http://localhost:8000/chat/stream', {
+			const response = await fetch(`${API_BASE}/chat/stream`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -105,7 +107,7 @@
 							scrollToBottom();
 						} else if (event.type === 'error') {
 							messages.splice(thinkingIdx, 1);
-							messages.push({ role: 'assistant', content: '죄송합니다. 오류가 발생했습니다.' });
+							messages.push({ role: 'assistant', content: `오류가 발생했습니다:\n${event.error}` });
 						}
 					} catch {
 						// ignore malformed lines

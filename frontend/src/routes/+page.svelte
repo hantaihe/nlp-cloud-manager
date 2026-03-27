@@ -10,12 +10,16 @@
 		fetchServiceStats,
 		getCombinedStats,
 		formatCurrency,
-		type CloudStats
+		getServiceCurrency,
+		type CloudStats,
+		type CurrencyCost
 	} from '$lib/dashboardApi';
 
-	let loading = $state(false);
+	let loadingServices = $state<Record<string, boolean>>({});
 	let isEditing = $state(false);
 	let settingsLoaded = $state(false);
+
+	let loading = $derived(Object.values(loadingServices).some(Boolean));
 
 	let serviceStats = $state<Record<string, CloudStats | null>>({});
 	let selectedProviders = $state<Record<string, boolean>>({});
@@ -74,7 +78,6 @@
 	let layout = $state<DashboardItem[]>([]);
 
 	async function loadData() {
-		loading = true;
 		const { startDate, endDate, granularity } = get(dashboardSettings);
 
 		const visibleItems = layout.filter((i) => i.visible);
@@ -86,17 +89,30 @@
 			(s) => visibleCategories.has(s.category) || (hasCombinedVisible && selectedProviders[s.id])
 		);
 
-		const results = await Promise.all(
-			activeServices.map((s) =>
-				fetchServiceStats(s.id, startDate, endDate, granularity, visibleTypes)
-			)
-		);
-		const newStats: Record<string, CloudStats | null> = {};
-		activeServices.forEach((s, i) => {
-			newStats[s.id] = results[i];
+		const promises = activeServices.map(async (s) => {
+			loadingServices = { ...loadingServices, [s.id]: true };
+			try {
+				const result = await fetchServiceStats(s.id, startDate, endDate, granularity, visibleTypes);
+				serviceStats = { ...serviceStats, [s.id]: result };
+			} catch (e: any) {
+				serviceStats = {
+					...serviceStats,
+					[s.id]: {
+						totalCost: 0,
+						costTrend: 0,
+						topServices: [],
+						monthlyData: [],
+						activeResources: 0,
+						budgetUsed: 0,
+						alerts: 0,
+						error: e.message || `${s.name} connection failed`
+					}
+				};
+			} finally {
+				loadingServices = { ...loadingServices, [s.id]: false };
+			}
 		});
-		serviceStats = newStats;
-		loading = false;
+		await Promise.all(promises);
 	}
 
 	async function initLayout() {
@@ -472,10 +488,8 @@
 							error={stats.error}
 							trend={{
 								value: Math.abs(stats.costTrend),
-								direction: stats.costTrend > 0 ? 'up' : 'down'
+								direction: stats.costTrend >= 0 ? 'up' : 'down'
 							}}
-							chartData={stats.monthlyData.map((m) => ({ label: m.month, value: m.cost }))}
-							chartColor={getProviderColor(item.category)}
 							href="/service/{item.category}"
 						/>
 					{:else if item.id.includes('trend') && stats && item.category !== 'combined'}
@@ -684,19 +698,24 @@
 							href="/service/{item.category}"
 						/>
 					{:else if item.type === 'combined-total'}
+						{@const byCurrency = combinedStats.totalCostByCurrency || []}
+						{@const displayValue =
+							byCurrency.length > 0
+								? byCurrency.map((c) => formatCurrency(c.total, c.currency)).join(' / ')
+								: formatCurrency(combinedStats.totalCost)}
 						<StatCard
 							title="Total Cloud Spend"
-							value={formatCurrency(combinedStats.totalCost)}
-							subtitle="Selected providers"
+							value={displayValue}
+							subtitle={byCurrency.length > 1
+								? 'USD (AWS+GCP) / KRW (Azure)'
+								: 'Selected providers'}
 							imgSrc="/icons/total.png"
 							color="combined"
 							mode="kpi"
 							trend={{
 								value: Math.abs(combinedStats.costTrend),
-								direction: combinedStats.costTrend > 0 ? 'up' : 'down'
+								direction: combinedStats.costTrend >= 0 ? 'up' : 'down'
 							}}
-							chartData={combinedStats.monthlyData.map((m) => ({ label: m.month, value: m.cost }))}
-							chartColor="var(--color-purple)"
 						/>
 					{:else if item.type === 'combined-trend'}
 						{@const isDaily = $dashboardSettings.granularity === 'DAILY'}
@@ -728,6 +747,10 @@
 								(s) => ({
 									label: s.name,
 									value: serviceStats[s.id]!.totalCost,
+									displayValue: formatCurrency(
+										serviceStats[s.id]!.totalCost,
+										getServiceCurrency(s.id)
+									),
 									color: s.color
 								})
 							)}

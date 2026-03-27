@@ -15,8 +15,8 @@ export interface DashboardPersistedSettings {
     selectedProviders: Record<string, boolean>;
 }
 
-const BASE_API_URL = 'http://localhost:3000/api';
-const GCP_API_URL = 'http://localhost:8002';
+const BASE_API_URL = import.meta.env.VITE_BASE_API_URL ?? 'http://localhost:3000/api';
+const GCP_API_URL = import.meta.env.VITE_GCP_API_URL ?? 'http://localhost:8002';
 
 export interface GcpCredential {
     id: string;

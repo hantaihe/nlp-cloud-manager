@@ -20,6 +20,11 @@ export class AppController {
     return record;
   }
 
+  @Get('health')
+  health() {
+    return { status: 'ok' };
+  }
+
   @Get('dashboard/layout')
   async getLayout(@Query('userId') userId: string) {
     const uId = userId || 'default';

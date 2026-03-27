@@ -35,8 +35,9 @@
 
 			filters.groupBy.forEach((dim) => queryParams.append('group_by', dim));
 
-			const statsRes = await fetch(
-				`http://localhost:8001/dashboard/stats?${queryParams.toString()}`
+			const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001';
+		const statsRes = await fetch(
+				`${apiBase}/dashboard/stats?${queryParams.toString()}`
 			);
 			if (!statsRes.ok) {
 				const errData = await statsRes.json();
