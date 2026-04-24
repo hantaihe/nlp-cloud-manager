@@ -143,8 +143,8 @@ services:
 
   frontend-aws:
     build:
-      context: ./frontend/services/aws
-      dockerfile: Dockerfile
+      context: ./frontend
+      dockerfile: services/aws/Dockerfile
     container_name: nlp-frontend-aws
     restart: unless-stopped
     ports:
@@ -154,8 +154,8 @@ services:
 
   frontend-azure:
     build:
-      context: ./frontend/services/azure
-      dockerfile: Dockerfile
+      context: ./frontend
+      dockerfile: services/azure/Dockerfile
     container_name: nlp-frontend-azure
     restart: unless-stopped
     ports:
@@ -165,8 +165,8 @@ services:
 
   frontend-gcp:
     build:
-      context: ./frontend/services/gcp
-      dockerfile: Dockerfile
+      context: ./frontend
+      dockerfile: services/gcp/Dockerfile
     container_name: nlp-frontend-gcp
     restart: unless-stopped
     ports:
@@ -176,8 +176,8 @@ services:
 
   frontend-chatbot:
     build:
-      context: ./frontend/services/chatbot
-      dockerfile: Dockerfile
+      context: ./frontend
+      dockerfile: services/chatbot/Dockerfile
     container_name: nlp-frontend-chatbot
     restart: unless-stopped
     ports:

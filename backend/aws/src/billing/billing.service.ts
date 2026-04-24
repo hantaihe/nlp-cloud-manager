@@ -21,6 +21,9 @@ import { CredentialsService, AWSCredentials } from '../credentials/credentials.s
 export class BillingService {
     private readonly logger = new Logger(BillingService.name);
 
+    private statsCache = new Map<string, { at: number; value: any }>();
+    private readonly STATS_TTL_MS = 5 * 1000;
+
     constructor(
         @InjectRepository(DailyCost)
         private dailyCostRepository: Repository<DailyCost>,
@@ -36,9 +39,9 @@ export class BillingService {
         const config = {
             region: targetCreds.region,
             credentials: {
-                accessKeyId: targetCreds.accessKeyId,
-                secretAccessKey: targetCreds.secretAccessKey,
-                sessionToken: targetCreds.sessionToken,
+                accessKeyId: targetCreds.access_key_id,
+                secretAccessKey: targetCreds.secret_access_key,
+                sessionToken: targetCreds.session_token,
             },
         };
 
@@ -115,7 +118,7 @@ export class BillingService {
         if ((params.granularity === 'DAILY' || !params.granularity) && !params.filter) {
             const cachedData = await this.dailyCostRepository.find({
                 where: {
-                    credentialId: targetCreds.id,
+                    credential_id: targetCreds.id,
                     date: Between(start, end),
                 },
                 order: { date: 'ASC' },
@@ -130,7 +133,7 @@ export class BillingService {
             const yesterdayStr = this.formatDate(yesterday);
 
             const hasAllData = cachedData.length >= diffDays;
-            const hasGroupingData = !groupByStr || cachedData.every(d => d.groupedData && d.groupedData[groupByStr]);
+            const hasGroupingData = !groupByStr || cachedData.every(d => d.grouped_data && d.grouped_data[groupByStr]);
             const hasRecentEstimated = cachedData.some(d => d.estimated && d.date >= yesterdayStr);
 
             if (hasAllData && hasGroupingData && !hasRecentEstimated) {
@@ -139,7 +142,7 @@ export class BillingService {
                     ResultsByTime: cachedData.map(d => ({
                         TimePeriod: { Start: d.date, End: this.getNextDay(d.date) },
                         Total: { UnblendedCost: { Amount: d.amount.toString(), Unit: d.unit } },
-                        Groups: groupByStr ? d.groupedData[groupByStr] : [],
+                        Groups: groupByStr ? d.grouped_data[groupByStr] : [],
                         Estimated: d.estimated,
                     })),
                 };
@@ -178,7 +181,7 @@ export class BillingService {
         return this.formatDate(date);
     }
 
-    private async saveDailyCostsToDb(credentialId: string, results: any[], groupBy?: { Type: string; Key: string }[]) {
+    private async saveDailyCostsToDb(credential_id: string, results: any[], groupBy?: { Type: string; Key: string }[]) {
         const groupByStr = groupBy
             ? groupBy
                 .map((g) => `${g.Type}:${g.Key}`)
@@ -194,24 +197,24 @@ export class BillingService {
             const groups = result.Groups || [];
 
             let dailyCost = await this.dailyCostRepository.findOne({
-                where: { credentialId, date },
+                where: { credential_id, date },
             });
 
             if (!dailyCost) {
                 dailyCost = new DailyCost();
-                dailyCost.credentialId = credentialId;
+                dailyCost.credential_id = credential_id;
                 dailyCost.date = date;
-                dailyCost.groupedData = {};
+                dailyCost.grouped_data = {};
             }
 
             dailyCost.amount = amount;
             dailyCost.unit = unit;
             dailyCost.estimated = estimated;
-            dailyCost.updatedAt = new Date();
+            dailyCost.updated_at = new Date();
 
             if (groupByStr) {
-                if (!dailyCost.groupedData) dailyCost.groupedData = {};
-                dailyCost.groupedData[groupByStr] = groups;
+                if (!dailyCost.grouped_data) dailyCost.grouped_data = {};
+                dailyCost.grouped_data[groupByStr] = groups;
             }
 
             await this.dailyCostRepository.save(dailyCost);
@@ -225,8 +228,8 @@ export class BillingService {
         return `${year}-${month}-${day}`;
     }
 
-    async getCurrentMonthCost(creds?: AWSCredentials) {
-        const response = await this.getAdvancedCost(creds, {});
+    async getCurrentMonthCost(creds?: AWSCredentials, start?: string, end?: string) {
+        const response = await this.getAdvancedCost(creds, { start, end });
         return response.ResultsByTime;
     }
 
@@ -234,7 +237,7 @@ export class BillingService {
         const { budgetsClient, creds: targetCreds } = await this.getClients(creds);
         try {
             const command = new DescribeBudgetsCommand({
-                AccountId: targetCreds.accountId || process.env.AWS_ACCOUNT_ID,
+                AccountId: targetCreds.account_id || process.env.AWS_ACCOUNT_ID,
             });
             const response = await budgetsClient.send(command);
             return response.Budgets;
@@ -268,9 +271,9 @@ export class BillingService {
         }
     }
 
-    async getBillingSummary(creds?: AWSCredentials) {
+    async getBillingSummary(creds?: AWSCredentials, start?: string, end?: string) {
         const [cost, budgets, freeTier, recommendations] = await Promise.all([
-            this.getCurrentMonthCost(creds),
+            this.getCurrentMonthCost(creds, start, end),
             this.getBudgets(creds),
             this.getFreeTierUsage(creds),
             this.getRecommendations(creds),
@@ -299,19 +302,17 @@ export class BillingService {
         } catch (error) {
             if (error instanceof BadRequestException && error.message === 'Credentials not found') {
                 return {
-                    totalCost: 0,
-                    costTrend: 0,
-                    topServices: [],
-                    monthlyData: [],
-                    dailyData: [],
-                    activeResources: 0,
-                    budgetUsed: 0,
-                    alerts: 0,
-                    error: 'Credentials not found'
+                    totalCost: 0, costTrend: 0, topServices: [],
+                    monthlyData: [], dailyData: [], activeResources: 0,
+                    budgetUsed: 0, alerts: 0, error: 'Credentials not found',
                 };
             }
             throw error;
         }
+
+        const cacheKey = `${targetCreds.id}|${start ?? ''}|${end ?? ''}|${granularity}`;
+        const cached = this.statsCache.get(cacheKey);
+        if (cached && Date.now() - cached.at < this.STATS_TTL_MS) return cached.value;
 
         const now = new Date();
         const currentMonthStart = start || this.formatDate(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -328,81 +329,85 @@ export class BillingService {
         const startDateObj = new Date(currentMonthStart);
         const lastMonthStart = this.formatDate(new Date(startDateObj.getFullYear(), startDateObj.getMonth() - 1, 1));
         const lastMonthEnd = this.formatDate(new Date(startDateObj.getFullYear(), startDateObj.getMonth(), 1));
-
         const sevenMonthsAgo = this.formatDate(new Date(startDateObj.getFullYear(), startDateObj.getMonth() - 6, 1));
 
-        const [currentCost, lastCost, monthlyCosts, serviceCosts, budgets] = await Promise.allSettled([
-            ceClient.send(new GetCostAndUsageCommand({
-                TimePeriod: { Start: currentMonthStart, End: currentMonthEnd },
-                Granularity: 'MONTHLY',
-                Metrics: ['UnblendedCost'],
-            })),
-            ceClient.send(new GetCostAndUsageCommand({
-                TimePeriod: { Start: lastMonthStart, End: lastMonthEnd },
-                Granularity: 'MONTHLY',
-                Metrics: ['UnblendedCost'],
-            })),
-            ceClient.send(new GetCostAndUsageCommand({
-                TimePeriod: { Start: sevenMonthsAgo, End: currentMonthEnd },
-                Granularity: granularity,
-                Metrics: ['UnblendedCost'],
-            })),
-            ceClient.send(new GetCostAndUsageCommand({
-                TimePeriod: { Start: currentMonthStart, End: currentMonthEnd },
-                Granularity: 'MONTHLY',
-                Metrics: ['UnblendedCost'],
-                GroupBy: [{ Type: 'DIMENSION', Key: 'SERVICE' }],
-            })),
+
+        const advancedCostPromise = this.getAdvancedCost(creds, {
+            granularity: 'DAILY',
+            start: sevenMonthsAgo,
+            end: currentMonthEnd,
+            groupBy: [{ Type: 'DIMENSION', Key: 'SERVICE' }],
+        }).catch((e) => {
+            this.logger.warn(`getAdvancedCost failed in dashboard: ${e?.message || e}`);
+            return { ResultsByTime: [] as any[] };
+        });
+
+        const [advancedCost, budgets] = await Promise.allSettled([
+            advancedCostPromise,
             budgetsClient.send(new DescribeBudgetsCommand({
-                AccountId: targetCreds.accountId || process.env.AWS_ACCOUNT_ID,
+                AccountId: targetCreds.account_id || process.env.AWS_ACCOUNT_ID,
             })),
         ]);
 
-        let totalCost = 0;
-        if (currentCost.status === 'fulfilled' && currentCost.value.ResultsByTime?.length) {
-            totalCost = parseFloat(currentCost.value.ResultsByTime[0].Total?.UnblendedCost?.Amount || '0');
-        }
+        const resultsByTime: any[] = advancedCost.status === 'fulfilled'
+            ? (advancedCost.value?.ResultsByTime ?? [])
+            : [];
 
-        let costTrend = 0;
-        if (lastCost.status === 'fulfilled' && lastCost.value.ResultsByTime?.length) {
-            const lastTotal = parseFloat(lastCost.value.ResultsByTime[0].Total?.UnblendedCost?.Amount || '0');
-            if (lastTotal > 0) {
-                costTrend = Math.round(((totalCost - lastTotal) / lastTotal) * 1000) / 10;
+        const inRange = (dateStr: string, from: string, to: string) =>
+            dateStr >= from && dateStr < to;
+
+        let totalCost = 0;
+        let lastTotal = 0;
+        const monthlyTotals = new Map<string, number>();
+        const dailyTotals = new Map<string, number>();
+        const serviceTotals = new Map<string, number>();
+
+        for (const row of resultsByTime) {
+            const day = row.TimePeriod?.Start as string | undefined;
+            if (!day) continue;
+            const rowAmount = parseFloat(row.Total?.UnblendedCost?.Amount || '0');
+
+            dailyTotals.set(day, (dailyTotals.get(day) || 0) + rowAmount);
+            const monthKey = day.slice(0, 7);
+            monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) || 0) + rowAmount);
+
+            if (inRange(day, currentMonthStart, currentMonthEnd)) {
+                totalCost += rowAmount;
+                for (const g of (row.Groups || [])) {
+                    const name = g.Keys?.[0] || 'Unknown';
+                    const amt = parseFloat(g.Metrics?.UnblendedCost?.Amount || '0');
+                    serviceTotals.set(name, (serviceTotals.get(name) || 0) + amt);
+                }
+            }
+            if (inRange(day, lastMonthStart, lastMonthEnd)) {
+                lastTotal += rowAmount;
             }
         }
+
+        const costTrend = lastTotal > 0
+            ? Math.round(((totalCost - lastTotal) / lastTotal) * 1000) / 10
+            : 0;
 
         const months = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
         const monthlyData: { month: string; cost: number }[] = [];
         const dailyData: { day: string; cost: number }[] = [];
-        if (monthlyCosts.status === 'fulfilled' && monthlyCosts.value.ResultsByTime) {
-            for (const period of monthlyCosts.value.ResultsByTime) {
-                const startDate = new Date(period.TimePeriod?.Start || '');
-                if (granularity === 'DAILY') {
-                    dailyData.push({
-                        day: `${startDate.getMonth() + 1}/${startDate.getDate()}`,
-                        cost: Math.round(parseFloat(period.Total?.UnblendedCost?.Amount || '0'))
-                    });
-                } else {
-                    monthlyData.push({
-                        month: months[startDate.getMonth()],
-                        cost: Math.round(parseFloat(period.Total?.UnblendedCost?.Amount || '0'))
-                    });
-                }
+        if (granularity === 'DAILY') {
+            for (const [day, cost] of [...dailyTotals.entries()].sort()) {
+                const d = new Date(day);
+                dailyData.push({ day: `${d.getMonth() + 1}/${d.getDate()}`, cost: Math.round(cost) });
+            }
+        } else {
+            for (const [monthKey, cost] of [...monthlyTotals.entries()].sort()) {
+                const monthIdx = parseInt(monthKey.slice(5, 7), 10) - 1;
+                monthlyData.push({ month: months[monthIdx], cost: Math.round(cost) });
             }
         }
 
-        const topServices: { name: string; cost: number }[] = [];
-        if (serviceCosts.status === 'fulfilled' && serviceCosts.value.ResultsByTime?.length) {
-            const groups = serviceCosts.value.ResultsByTime[0].Groups || [];
-            const sorted = groups
-                .map((g) => ({
-                    name: g.Keys?.[0] || 'Unknown',
-                    cost: Math.round(parseFloat(g.Metrics?.UnblendedCost?.Amount || '0')),
-                }))
-                .filter((s) => s.cost > 0)
-                .sort((a, b) => b.cost - a.cost);
-            topServices.push(...sorted.slice(0, 5));
-        }
+        const topServices = [...serviceTotals.entries()]
+            .map(([name, cost]) => ({ name, cost: Math.round(cost) }))
+            .filter((s) => s.cost > 0)
+            .sort((a, b) => b.cost - a.cost)
+            .slice(0, 5);
 
         let budgetUsed = 0;
         let alertsCount = 0;
@@ -455,13 +460,8 @@ export class BillingService {
             const nextMonthFirst = this.formatDate(new Date(today.getFullYear(), today.getMonth() + 1, 1));
 
             let actualThisMonth = 0;
-            const actualResult = await ceClient.send(new GetCostAndUsageCommand({
-                TimePeriod: { Start: thisMonthStart, End: tomorrow },
-                Granularity: 'MONTHLY',
-                Metrics: ['UnblendedCost'],
-            }));
-            if (actualResult.ResultsByTime?.length) {
-                actualThisMonth = parseFloat(actualResult.ResultsByTime[0].Total?.UnblendedCost?.Amount || '0');
+            for (const [day, cost] of dailyTotals) {
+                if (day >= thisMonthStart && day < tomorrow) actualThisMonth += cost;
             }
 
             let remainingForecast = 0;
@@ -479,7 +479,7 @@ export class BillingService {
             this.logger.warn(`GetCostForecast failed: ${e}`);
         }
 
-        return {
+        const result = {
             totalCost: Math.round(totalCost),
             forecastedCost,
             costTrend,
@@ -494,5 +494,7 @@ export class BillingService {
             resourcesSummary,
             timestamp: new Date().toISOString(),
         };
+        this.statsCache.set(cacheKey, { at: Date.now(), value: result });
+        return result;
     }
 }

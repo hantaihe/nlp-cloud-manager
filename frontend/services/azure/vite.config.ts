@@ -3,7 +3,8 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 import path from 'path'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+	base: mode === 'production' ? '/services/azure/' : '/',
 	plugins: [svelte()],
 	resolve: {
 		alias: {
@@ -15,4 +16,4 @@ export default defineConfig({
 		host: true,
 		cors: true
 	}
-})
+}))

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nlp-config
+  namespace: nlp-cloud-manager
+data:
+  DATABASE_HOST: "mysql"
+  DATABASE_PORT: "3306"
+  DATABASE_DATABASE: "nlp_cloud_manager"
+  MYSQL_DATABASE: "nlp_cloud_manager"
+  NODE_ENV: "production"

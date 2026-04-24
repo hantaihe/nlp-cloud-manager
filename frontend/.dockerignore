@@ -1,0 +1,9 @@
+**/node_modules
+**/.svelte-kit
+**/dist
+**/build
+**/.vite
+**/.DS_Store
+Dockerfile
+services/*/Dockerfile
+.git

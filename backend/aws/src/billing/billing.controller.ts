@@ -75,9 +75,13 @@ export class BillingController {
     }
 
     @Get('summary')
-    async getBillingSummary(@Query('name') name?: string) {
+    async getBillingSummary(
+        @Query('name') name?: string,
+        @Query('start') start?: string,
+        @Query('end') end?: string,
+    ) {
         const creds = await this.credentialsService.getStoredCredentials(name);
-        return this.billingService.getBillingSummary(creds ?? undefined);
+        return this.billingService.getBillingSummary(creds ?? undefined, start, end);
     }
 
     @Get('dashboard/stats')

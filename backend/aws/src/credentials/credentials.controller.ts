@@ -27,7 +27,7 @@ export class CredentialsController {
             isSet: !!creds,
             name: creds?.name,
             region: creds?.region,
-            accountId: creds?.accountId,
+            account_id: creds?.account_id,
         };
     }
 }

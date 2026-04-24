@@ -41,7 +41,7 @@
 </script>
 
 <div class="cost-card glass">
-	<h3>이번 달의 예상 비용</h3>
+	<h3>조회 기간 비용</h3>
 	<div class="amount">{formatCurrency(currentCost)}</div>
 	<div class="period">
 		<span>{startDate}</span> → <span>{endDate}</span>

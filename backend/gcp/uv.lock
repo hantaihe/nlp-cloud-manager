@@ -252,6 +252,7 @@ dependencies = [
     { name = "google-cloud-monitoring" },
     { name = "google-cloud-org-policy" },
     { name = "google-cloud-quotas" },
+    { name = "google-cloud-recommender" },
     { name = "google-cloud-service-usage" },
     { name = "greenlet" },
     { name = "pydantic-settings" },
@@ -277,6 +278,7 @@ requires-dist = [
     { name = "google-cloud-monitoring" },
     { name = "google-cloud-org-policy" },
     { name = "google-cloud-quotas" },
+    { name = "google-cloud-recommender" },
     { name = "google-cloud-service-usage" },
     { name = "greenlet" },
     { name = "pydantic-settings" },
@@ -580,6 +582,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6a/3a/bc8241bc62db2be34298f87da0035c997cb3bf6a2f3889d46597ce7356fd/google_cloud_quotas-0.5.0.tar.gz", hash = "sha256:3dc55dbe24371fbeaf18be8391c48438e188d6052f515602b3ee62c7fe193158", size = 175003, upload-time = "2026-02-05T18:59:15.713Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e3/11/b61a1bd87b170ed4813d15ddd41583f1b0a1186a21f536e1f700873d81b4/google_cloud_quotas-0.5.0-py3-none-any.whl", hash = "sha256:e47e1455e87a3e79179d2461cdd6a19a74cfad22d5d4a49f8b2e1b3af1c8d558", size = 163410, upload-time = "2026-02-05T18:59:05.283Z" },
+]
+
+[[package]]
+name = "google-cloud-recommender"
+version = "2.21.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/0e/966a746872f73e6bfe66c99d8dafb0774c644971fa409af62fb9b1a2d46c/google_cloud_recommender-2.21.0.tar.gz", hash = "sha256:21d8decba810ae2607268a1b4af637fb4007b0ec7290557e629f2246382eb22a", size = 188642, upload-time = "2026-03-26T22:18:14.527Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/f6/0e07450d666f850c7f87b59e990f0a7807cca6c140e1d922e0fd0ea03f2e/google_cloud_recommender-2.21.0-py3-none-any.whl", hash = "sha256:d17adb0368c04a1ff19501ccd5225048062d0ada63690de87ded4d2faf45e472", size = 162284, upload-time = "2026-03-26T22:16:09.122Z" },
 ]
 
 [[package]]

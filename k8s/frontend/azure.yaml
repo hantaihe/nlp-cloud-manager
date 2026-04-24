@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-azure
+  namespace: nlp-cloud-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-azure
+  template:
+    metadata:
+      labels:
+        app: frontend-azure
+    spec:
+      containers:
+        - name: frontend-azure
+          image: nlp-cloud-manager/frontend-azure:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5176
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5176
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-azure
+  namespace: nlp-cloud-manager
+spec:
+  selector:
+    app: frontend-azure
+  ports:
+    - port: 5176
+      targetPort: 5176

@@ -153,6 +153,10 @@ async def get_azure_client(client_class, db: AsyncSession, name: Optional[str] =
 async def root():
     return {"message": "Azure Cost & Billing API is running"}
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 @app.post("/credentials", response_model=CredentialResponse)
 async def create_credential(cred: CredentialCreate, db: AsyncSession = Depends(get_db)):
     db_cred = AzureCredential(**cred.dict())
@@ -679,6 +683,13 @@ async def get_dashboard_stats(
                 except Exception as e:
                     logger.error(f"Daily cost query error: {e}")
                     traceback.print_exc()
+
+        budget_cache_key = f"budget:{credential.id}:{now.year}:{now.month}"
+        cached_budget = _cache_get(budget_cache_key)
+        if cached_budget is not None and cost_cache_hit:
+            budget_used = cached_budget.get("budget_used", 0)
+            alerts_count = cached_budget.get("alerts_count", 0)
+            recent_alerts = cached_budget.get("recent_alerts", [])
 
         if not cost_cache_hit:
             month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",

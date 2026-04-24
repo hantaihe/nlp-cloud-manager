@@ -297,12 +297,24 @@ async def list_billing_projects(
 async def get_billing_summary(
     billing_account_id: Optional[str] = None,
     name: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     try:
         credential = await _get_credential(db, name)
         creds = _get_credentials_obj(credential)
-        
+
+        now = datetime.now()
+        try:
+            dt_start = datetime.strptime(start, "%Y-%m-%d") if start else now.replace(day=1)
+            dt_end = datetime.strptime(end, "%Y-%m-%d") if end else now
+        except ValueError:
+            dt_start = now.replace(day=1)
+            dt_end = now
+        period_start = dt_start.strftime("%Y-%m-%d")
+        period_end = dt_end.strftime("%Y-%m-%d")
+
         billing_client = billing_v1.CloudBillingClient(credentials=creds)
         accounts = list(log_gcp_call("CloudBilling", "list_billing_accounts", billing_client.list_billing_accounts))
         
@@ -337,14 +349,13 @@ async def get_billing_summary(
             base_table = "gcp_billing_export_v1"
             resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset_name, base_table, billing_account_id)
             
-            start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
-            
             query = f"""
-                SELECT 
+                SELECT
                     IFNULL(SUM(cost), 0) + IFNULL(SUM((SELECT SUM(c.amount) FROM UNNEST(credits) AS c)), 0) AS total_cost,
                     ANY_VALUE(currency) as currency
                 FROM `{credential.project_id}.{dataset_name}.{resolved_table}`
-                WHERE usage_start_time >= TIMESTAMP('{start_date}')
+                WHERE usage_start_time >= TIMESTAMP('{period_start}')
+                  AND usage_start_time <= TIMESTAMP('{period_end} 23:59:59')
             """
             query_job = bq_client.query(query)
             for row in query_job:
@@ -364,9 +375,8 @@ async def get_billing_summary(
 
                 if billing_account_id:
                     import urllib.request as _urllib_req
-                    now = datetime.now()
-                    year = now.year
-                    month = now.month
+                    year = dt_start.year
+                    month = dt_start.month
                     url = (
                         f"https://cloudbilling.googleapis.com/v1/billingAccounts/"
                         f"{billing_account_id}/invoices"
@@ -399,8 +409,8 @@ async def get_billing_summary(
                 "total_budget": total_budget,
                 "total_cost": round(total_cost, 2),
                 "currency_code": currency_code,
-                "start_date": datetime.now().replace(day=1).strftime("%Y-%m-%d"),
-                "end_date": datetime.now().strftime("%Y-%m-%d")
+                "start_date": period_start,
+                "end_date": period_end,
             }
         }
     except HTTPException:

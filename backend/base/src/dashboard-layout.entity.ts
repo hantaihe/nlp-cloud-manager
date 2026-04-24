@@ -2,12 +2,12 @@ import { Entity, Column, PrimaryColumn } from 'typeorm';
 
 @Entity('dashboard_layouts')
 export class DashboardLayout {
-    @PrimaryColumn()
-    userId: string;
+    @PrimaryColumn({ name: 'user_id' })
+    user_id: string;
 
-    @Column({ type: 'text' })
-    layoutData: string;
+    @Column({ name: 'layout_data', type: 'text' })
+    layout_data: string;
 
-    @Column({ type: 'text', nullable: true })
-    settingsData: string | null;
+    @Column({ name: 'settings_data', type: 'text', nullable: true })
+    settings_data: string | null;
 }

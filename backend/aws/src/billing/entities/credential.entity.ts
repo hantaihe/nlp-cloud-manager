@@ -8,21 +8,21 @@ export class Credential {
     @Column({ unique: true })
     name: string;
 
-    @Column()
-    accessKeyId: string;
+    @Column({ name: 'access_key_id' })
+    access_key_id: string;
 
-    @Column()
-    secretAccessKey: string;
+    @Column({ name: 'secret_access_key' })
+    secret_access_key: string;
 
-    @Column({ nullable: true })
-    sessionToken?: string;
+    @Column({ name: 'session_token', nullable: true })
+    session_token?: string;
 
     @Column({ default: 'ap-northeast-2' })
     region: string;
 
-    @Column({ nullable: true })
-    accountId?: string;
+    @Column({ name: 'account_id', nullable: true })
+    account_id?: string;
 
-    @UpdateDateColumn()
-    updatedAt: Date;
+    @UpdateDateColumn({ name: 'updated_at' })
+    updated_at: Date;
 }

@@ -87,7 +87,7 @@
 					)
 				: Promise.resolve(null),
 			fetch(
-				`${API_BASE}/billing/summary?billing_account_id=${filters.billingAccountId}&name=${name}`
+				`${API_BASE}/billing/summary?billing_account_id=${filters.billingAccountId}&name=${name}&start=${filters.start}&end=${filters.end}`
 			)
 		]);
 

@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-gcp
+  namespace: nlp-cloud-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-gcp
+  template:
+    metadata:
+      labels:
+        app: backend-gcp
+    spec:
+      containers:
+        - name: backend-gcp
+          image: nlp-cloud-manager/backend-gcp:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8002
+          envFrom:
+            - configMapRef:
+                name: nlp-config
+          env:
+            - name: DATABASE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-db-secret
+                  key: DATABASE_USERNAME
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-db-secret
+                  key: DATABASE_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-gcp
+  namespace: nlp-cloud-manager
+spec:
+  selector:
+    app: backend-gcp
+  ports:
+    - port: 8002
+      targetPort: 8002

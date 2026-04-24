@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-main
+  namespace: nlp-cloud-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-main
+  template:
+    metadata:
+      labels:
+        app: frontend-main
+    spec:
+      containers:
+        - name: frontend-main
+          image: nlp-cloud-manager/frontend-main:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: HOST
+              value: "0.0.0.0"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-main
+  namespace: nlp-cloud-manager
+spec:
+  selector:
+    app: frontend-main
+  ports:
+    - port: 3000
+      targetPort: 3000

@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-aws
+  namespace: nlp-cloud-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-aws
+  template:
+    metadata:
+      labels:
+        app: backend-aws
+    spec:
+      containers:
+        - name: backend-aws
+          image: nlp-cloud-manager/backend-aws:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3002
+          envFrom:
+            - configMapRef:
+                name: nlp-config
+          env:
+            - name: PORT
+              value: "3002"
+            - name: DATABASE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-db-secret
+                  key: DATABASE_USERNAME
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-db-secret
+                  key: DATABASE_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /billing/health
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-aws
+  namespace: nlp-cloud-manager
+spec:
+  selector:
+    app: backend-aws
+  ports:
+    - port: 3002
+      targetPort: 3002

@@ -1,0 +1,108 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nlp-ingress-base
+  namespace: nlp-cloud-manager
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: nlp-cloud-manager.local
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-base
+                port:
+                  number: 3000
+
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-main
+                port:
+                  number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nlp-ingress-services
+  namespace: nlp-cloud-manager
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: nlp-cloud-manager.local
+      http:
+        paths:
+          - path: /aws(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-aws
+                port:
+                  number: 3002
+
+          - path: /azure(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-azure
+                port:
+                  number: 8001
+
+          - path: /gcp(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-gcp
+                port:
+                  number: 8002
+
+          - path: /chatbot(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-chatbot
+                port:
+                  number: 8000
+
+          - path: /services/aws(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend-aws
+                port:
+                  number: 5175
+
+          - path: /services/azure(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend-azure
+                port:
+                  number: 5176
+
+          - path: /services/gcp(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend-gcp
+                port:
+                  number: 5177
+
+          - path: /services/chatbot(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend-chatbot
+                port:
+                  number: 3106

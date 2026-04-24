@@ -8,27 +8,27 @@ export class DailyCost {
     id: number;
 
     @ManyToOne(() => Credential, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'credentialId' })
+    @JoinColumn({ name: 'credential_id' })
     credential: Credential;
 
-    @Column()
-    credentialId: string;
+    @Column({ name: 'credential_id', type: 'varchar', length: 36 })
+    credential_id: string;
 
-    @Column()
+    @Column({ type: 'varchar', length: 10 })
     date: string;
 
-    @Column()
+    @Column({ type: 'decimal', precision: 18, scale: 6, default: 0 })
     amount: number;
 
-    @Column()
+    @Column({ type: 'varchar', length: 10, default: 'USD' })
     unit: string;
 
     @Column({ default: false })
     estimated: boolean;
 
-    @Column({ type: 'json', nullable: true })
-    groupedData: any;
+    @Column({ name: 'grouped_data', type: 'json', nullable: true })
+    grouped_data: any;
 
-    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-    updatedAt: Date;
+    @Column({ name: 'updated_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
+    updated_at: Date;
 }

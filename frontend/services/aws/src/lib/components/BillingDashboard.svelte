@@ -33,7 +33,9 @@
 
 		try {
 			const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:3002';
-		const summaryRes = await fetch(`${apiBase}/billing/summary?name=${activeName}`);
+		const summaryRes = await fetch(
+			`${apiBase}/billing/summary?name=${activeName}&start=${filters.start}&end=${filters.end}`
+		);
 			if (!summaryRes.ok) {
 				const errData = await summaryRes.json();
 				throw new Error(errData.message || 'AWS 정보 불러오기 실패');

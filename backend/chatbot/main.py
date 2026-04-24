@@ -20,10 +20,11 @@ from models import GCPCredential, AzureCredential, AWSCredential
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HTTP")
 
-CHATBOT_PROVIDER = os.getenv("CHATBOT_PROVIDER", "gemini")   # "ollama" | "gemini"
-OLLAMA_MODEL    = os.getenv("CHATBOT_MODEL", "qwen3:1.7b")
-GEMINI_MODEL    = os.getenv("GEMINI_MODEL", "gemini-3-pro-preview")
-GOOGLE_API_KEY  = os.getenv("GOOGLE_API_KEY", "[GOOGLE_API_KEY]")
+CHATBOT_PROVIDER = os.getenv("CHATBOT_PROVIDER", "gemini")
+OLLAMA_MODEL     = os.getenv("CHATBOT_MODEL", "qwen3:1.7b")
+OLLAMA_BASE_URL  = os.getenv("OLLAMA_BASE_URL")
+GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-3-pro-preview")
+GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "[GOOGLE_API_KEY]")s
 
 def build_model():
     if CHATBOT_PROVIDER == "gemini":
@@ -31,8 +32,11 @@ def build_model():
             raise RuntimeError("GOOGLE_API_KEY env var is required when CHATBOT_PROVIDER=gemini")
         logger.info(f"Using Gemini model: {GEMINI_MODEL}")
         return ChatGoogleGenerativeAI(model=GEMINI_MODEL, google_api_key=GOOGLE_API_KEY)
-    logger.info(f"Using Ollama model: {OLLAMA_MODEL}")
-    return ChatOllama(model=OLLAMA_MODEL)
+    logger.info(f"Using Ollama model: {OLLAMA_MODEL} @ {OLLAMA_BASE_URL or 'default'}")
+    kwargs = {"model": OLLAMA_MODEL}
+    if OLLAMA_BASE_URL:
+        kwargs["base_url"] = OLLAMA_BASE_URL
+    return ChatOllama(**kwargs)
 
 app = FastAPI(title="MCP Chatbot Server")
 

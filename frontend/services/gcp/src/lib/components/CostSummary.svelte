@@ -24,7 +24,7 @@
 </script>
 
 <div class="cost-card glass">
-	<h3>Current Month Actual Cost</h3>
+	<h3>Actual Cost</h3>
 	<div class="amount">{formatCurrency(summary?.total_cost || 0, summary?.currency_code)}</div>
 	<div class="stats">
 		<div class="stat">

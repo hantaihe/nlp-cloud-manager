@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-base
+  namespace: nlp-cloud-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-base
+  template:
+    metadata:
+      labels:
+        app: backend-base
+    spec:
+      containers:
+        - name: backend-base
+          image: nlp-cloud-manager/backend-base:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: nlp-config
+          env:
+            - name: DATABASE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-db-secret
+                  key: DATABASE_USERNAME
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-db-secret
+                  key: DATABASE_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-base
+  namespace: nlp-cloud-manager
+spec:
+  selector:
+    app: backend-base
+  ports:
+    - port: 3000
+      targetPort: 3000

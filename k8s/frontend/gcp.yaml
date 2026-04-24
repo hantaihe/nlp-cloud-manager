@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-gcp
+  namespace: nlp-cloud-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-gcp
+  template:
+    metadata:
+      labels:
+        app: frontend-gcp
+    spec:
+      containers:
+        - name: frontend-gcp
+          image: nlp-cloud-manager/frontend-gcp:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5177
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5177
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-gcp
+  namespace: nlp-cloud-manager
+spec:
+  selector:
+    app: frontend-gcp
+  ports:
+    - port: 5177
+      targetPort: 5177

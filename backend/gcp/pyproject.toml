@@ -19,6 +19,7 @@ dependencies = [
     "google-cloud-org-policy",
     "google-cloud-service-usage",
     "google-cloud-config",
+    "google-cloud-recommender",
     "sqlalchemy",
     "aiomysql",
     "cryptography",
