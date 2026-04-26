@@ -1,5 +1,10 @@
 # NLP Cloud Manager
 
+## Overview
+![Overview](docs/layer.png)
+---
+![Flow](docs/flow.png)
+
 ## 1. Frontend
 
 ### Base
@@ -58,8 +63,21 @@ cd backend/gcp
 uv run main.py
 ```
 
-## 3. MCP Server
+## 3. Chatbot Server
 ```bash
-cd mcp
+cd backend/chatbot
 uv run main.py
+```
+
+## 4. Terraform
+
+```bash
+cd terraform
+terraform init
+terraform apply
+```
+
+```bash
+kubectl -n istio-ingress port-forward svc/istio-ingressgateway 8080:80
+curl -H "Host: nlp-cloud-manager.local" http://localhost:8080/
 ```
