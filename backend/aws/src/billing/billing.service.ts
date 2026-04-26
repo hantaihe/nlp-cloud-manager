@@ -39,9 +39,9 @@ export class BillingService {
         const config = {
             region: targetCreds.region,
             credentials: {
-                accessKeyId: targetCreds.access_key_id,
-                secretAccessKey: targetCreds.secret_access_key,
-                sessionToken: targetCreds.session_token,
+                accessKeyId: targetCreds.accessKeyId,
+                secretAccessKey: targetCreds.secretAccessKey,
+                sessionToken: targetCreds.sessionToken,
             },
         };
 
@@ -118,7 +118,7 @@ export class BillingService {
         if ((params.granularity === 'DAILY' || !params.granularity) && !params.filter) {
             const cachedData = await this.dailyCostRepository.find({
                 where: {
-                    credential_id: targetCreds.id,
+                    credentialId: targetCreds.id,
                     date: Between(start, end),
                 },
                 order: { date: 'ASC' },
@@ -133,7 +133,7 @@ export class BillingService {
             const yesterdayStr = this.formatDate(yesterday);
 
             const hasAllData = cachedData.length >= diffDays;
-            const hasGroupingData = !groupByStr || cachedData.every(d => d.grouped_data && d.grouped_data[groupByStr]);
+            const hasGroupingData = !groupByStr || cachedData.every(d => d.groupedData && d.groupedData[groupByStr]);
             const hasRecentEstimated = cachedData.some(d => d.estimated && d.date >= yesterdayStr);
 
             if (hasAllData && hasGroupingData && !hasRecentEstimated) {
@@ -142,7 +142,7 @@ export class BillingService {
                     ResultsByTime: cachedData.map(d => ({
                         TimePeriod: { Start: d.date, End: this.getNextDay(d.date) },
                         Total: { UnblendedCost: { Amount: d.amount.toString(), Unit: d.unit } },
-                        Groups: groupByStr ? d.grouped_data[groupByStr] : [],
+                        Groups: groupByStr ? d.groupedData[groupByStr] : [],
                         Estimated: d.estimated,
                     })),
                 };
@@ -181,7 +181,7 @@ export class BillingService {
         return this.formatDate(date);
     }
 
-    private async saveDailyCostsToDb(credential_id: string, results: any[], groupBy?: { Type: string; Key: string }[]) {
+    private async saveDailyCostsToDb(credentialId: string, results: any[], groupBy?: { Type: string; Key: string }[]) {
         const groupByStr = groupBy
             ? groupBy
                 .map((g) => `${g.Type}:${g.Key}`)
@@ -197,24 +197,24 @@ export class BillingService {
             const groups = result.Groups || [];
 
             let dailyCost = await this.dailyCostRepository.findOne({
-                where: { credential_id, date },
+                where: { credentialId, date },
             });
 
             if (!dailyCost) {
                 dailyCost = new DailyCost();
-                dailyCost.credential_id = credential_id;
+                dailyCost.credentialId = credentialId;
                 dailyCost.date = date;
-                dailyCost.grouped_data = {};
+                dailyCost.groupedData = {};
             }
 
             dailyCost.amount = amount;
             dailyCost.unit = unit;
             dailyCost.estimated = estimated;
-            dailyCost.updated_at = new Date();
+            dailyCost.updatedAt = new Date();
 
             if (groupByStr) {
-                if (!dailyCost.grouped_data) dailyCost.grouped_data = {};
-                dailyCost.grouped_data[groupByStr] = groups;
+                if (!dailyCost.groupedData) dailyCost.groupedData = {};
+                dailyCost.groupedData[groupByStr] = groups;
             }
 
             await this.dailyCostRepository.save(dailyCost);
@@ -237,7 +237,7 @@ export class BillingService {
         const { budgetsClient, creds: targetCreds } = await this.getClients(creds);
         try {
             const command = new DescribeBudgetsCommand({
-                AccountId: targetCreds.account_id || process.env.AWS_ACCOUNT_ID,
+                AccountId: targetCreds.accountId || process.env.AWS_ACCOUNT_ID,
             });
             const response = await budgetsClient.send(command);
             return response.Budgets;
@@ -345,7 +345,7 @@ export class BillingService {
         const [advancedCost, budgets] = await Promise.allSettled([
             advancedCostPromise,
             budgetsClient.send(new DescribeBudgetsCommand({
-                AccountId: targetCreds.account_id || process.env.AWS_ACCOUNT_ID,
+                AccountId: targetCreds.accountId || process.env.AWS_ACCOUNT_ID,
             })),
         ]);
 

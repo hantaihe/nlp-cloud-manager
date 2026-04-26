@@ -6,11 +6,11 @@ import { Credential } from '../billing/entities/credential.entity';
 export class AWSCredentials {
     id: string;
     name: string;
-    access_key_id: string;
-    secret_access_key: string;
-    session_token?: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    sessionToken?: string;
     region: string;
-    account_id?: string;
+    accountId?: string;
 }
 
 @Injectable()
@@ -28,11 +28,11 @@ export class CredentialsService {
             credential = new Credential();
             credential.name = creds.name;
         }
-        if (creds.access_key_id) credential.access_key_id = creds.access_key_id;
-        if (creds.secret_access_key) credential.secret_access_key = creds.secret_access_key;
-        credential.session_token = creds.session_token;
+        if (creds.accessKeyId) credential.accessKeyId = creds.accessKeyId;
+        if (creds.secretAccessKey) credential.secretAccessKey = creds.secretAccessKey;
+        credential.sessionToken = creds.sessionToken;
         if (creds.region) credential.region = creds.region;
-        credential.account_id = creds.account_id;
+        credential.accountId = creds.accountId;
         return this.credentialRepository.save(credential);
     }
 
@@ -43,11 +43,11 @@ export class CredentialsService {
         return {
             id: credential.id,
             name: credential.name,
-            access_key_id: credential.access_key_id,
-            secret_access_key: credential.secret_access_key,
-            session_token: credential.session_token ?? undefined,
+            accessKeyId: credential.accessKeyId,
+            secretAccessKey: credential.secretAccessKey,
+            sessionToken: credential.sessionToken ?? undefined,
             region: credential.region,
-            account_id: credential.account_id ?? undefined,
+            accountId: credential.accountId ?? undefined,
         };
     }
 

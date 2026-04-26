@@ -156,32 +156,79 @@ def _get_credentials_obj(credential: GCPCredential, scopes: Optional[List[str]] 
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
 
-def _resolve_billing_table(client: bigquery.Client, project_id: str, dataset: str, table: str, billing_account_id: Optional[str] = None) -> str:
-    table_id = f"{project_id}.{dataset}.{table}"
+def _get_monitoring_total_cost(creds, project_id: str):
     try:
-        client.get_table(table_id)
-        return table
+        from google.cloud import monitoring_v3
+        from datetime import datetime, timedelta
+        import time
+
+        client = monitoring_v3.MetricServiceClient(credentials=creds)
+        now = time.time()
+
+        start_time = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        interval = monitoring_v3.TimeInterval(
+            end_time={"seconds": int(now)},
+            start_time={"seconds": int(start_time.timestamp())},
+        )
+        
+        filter_str = 'metric.type = "billing.googleapis.com/billing/total_cost"'
+        
+        results = client.list_time_series(
+            request={
+                "name": f"projects/{project_id}",
+                "filter": filter_str,
+                "interval": interval,
+                "view": monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.FULL,
+            }
+        )
+        
+        total_cost = 0.0
+        currency = "USD"
+        
+        for result in results:
+            if result.points:
+                latest_point = result.points[0]
+                total_cost += latest_point.value.double_value
+        
+        return total_cost, currency
+    except Exception as e:
+        logger.warning(f"Monitoring fallback failed: {e}")
+        return 0.0, "USD"
+
+
+def _resolve_billing_info(client: bigquery.Client, project_id: str, dataset: str, table: str, billing_account_id: Optional[str] = None):
+    try:
+        client.get_table(f"{project_id}.{dataset}.{table}")
+        return dataset, table
     except Exception:
         pass
 
-    if table == "gcp_billing_export_v1" and billing_account_id:
+    if billing_account_id:
         suffix = billing_account_id.replace("-", "_")
         alt_table = f"gcp_billing_export_v1_{suffix}"
         try:
             client.get_table(f"{project_id}.{dataset}.{alt_table}")
-            return alt_table
+            return dataset, alt_table
         except Exception:
             pass
 
     try:
-        tables = client.list_tables(f"{project_id}.{dataset}")
-        for t in tables:
-            if t.table_id.startswith("gcp_billing_export_v1_"):
-                return t.table_id
+        datasets = client.list_datasets(project=project_id)
+        for ds in datasets:
+            ds_id = ds.dataset_id
+            try:
+                tables = client.list_tables(f"{project_id}.{ds_id}")
+                for t in tables:
+                    if t.table_id.startswith("gcp_billing_export_v1"):
+                        logger.info(f"Discovered billing table: {ds_id}.{t.table_id}")
+                        return ds_id, t.table_id
+            except Exception:
+                continue
     except Exception:
         pass
 
-    return table
+    return dataset, table
 
 @app.get("/health")
 async def health_check():
@@ -347,7 +394,7 @@ async def get_billing_summary(
             bq_client = bigquery.Client(credentials=creds, project=credential.project_id)
             dataset_name = "all_billing_data"
             base_table = "gcp_billing_export_v1"
-            resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset_name, base_table, billing_account_id)
+            dataset_name, resolved_table = _resolve_billing_info(bq_client, credential.project_id, dataset_name, base_table, billing_account_id)
             
             query = f"""
                 SELECT
@@ -1141,7 +1188,7 @@ async def get_dashboard_stats(
                 else:
                     logger.info(f"Cache MISS: GCP daily {credential.name} — calling BigQuery")
                     
-                    resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
+                    dataset, resolved_table = _resolve_billing_info(bq_client, credential.project_id, dataset, table, billing_account_id)
                     
                     combined_query = f"""
                         SELECT
@@ -1259,7 +1306,7 @@ async def get_dashboard_stats(
                     cost_cache_hit = True
                 else:
                     logger.info(f"Cache MISS (DB): GCP monthly cost {credential.name} — calling BigQuery")
-                    resolved_table = _resolve_billing_table(bq_client, credential.project_id, dataset, table, billing_account_id)
+                    dataset, resolved_table = _resolve_billing_info(bq_client, credential.project_id, dataset, table, billing_account_id)
 
                     current_cost_query = f"""
                         SELECT

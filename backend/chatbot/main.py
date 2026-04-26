@@ -20,11 +20,11 @@ from models import GCPCredential, AzureCredential, AWSCredential
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("HTTP")
 
-CHATBOT_PROVIDER = os.getenv("CHATBOT_PROVIDER", "gemini")
+CHATBOT_PROVIDER = os.getenv("CHATBOT_PROVIDER", "gemini")   # "ollama" | "gemini"
 OLLAMA_MODEL     = os.getenv("CHATBOT_MODEL", "qwen3:1.7b")
 OLLAMA_BASE_URL  = os.getenv("OLLAMA_BASE_URL")
 GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-3-pro-preview")
-GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "[GOOGLE_API_KEY]")s
+GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "[GOOGLE_API_KEY]")
 
 def build_model():
     if CHATBOT_PROVIDER == "gemini":

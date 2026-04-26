@@ -12,7 +12,7 @@ export class DailyCost {
     credential: Credential;
 
     @Column({ name: 'credential_id', type: 'varchar', length: 36 })
-    credential_id: string;
+    credentialId: string;
 
     @Column({ type: 'varchar', length: 10 })
     date: string;
@@ -27,8 +27,8 @@ export class DailyCost {
     estimated: boolean;
 
     @Column({ name: 'grouped_data', type: 'json', nullable: true })
-    grouped_data: any;
+    groupedData: any;
 
     @Column({ name: 'updated_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
-    updated_at: Date;
+    updatedAt: Date;
 }

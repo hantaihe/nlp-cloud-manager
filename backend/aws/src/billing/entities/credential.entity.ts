@@ -9,20 +9,20 @@ export class Credential {
     name: string;
 
     @Column({ name: 'access_key_id' })
-    access_key_id: string;
+    accessKeyId: string;
 
     @Column({ name: 'secret_access_key' })
-    secret_access_key: string;
+    secretAccessKey: string;
 
     @Column({ name: 'session_token', nullable: true })
-    session_token?: string;
+    sessionToken?: string;
 
     @Column({ default: 'ap-northeast-2' })
     region: string;
 
     @Column({ name: 'account_id', nullable: true })
-    account_id?: string;
+    accountId?: string;
 
     @UpdateDateColumn({ name: 'updated_at' })
-    updated_at: Date;
+    updatedAt: Date;
 }
